@@ -1,5 +1,5 @@
-from app.database.mongodb import database
+from app.database.mongodb import db
 
 
 async def get_database():
-    return database
+    return db.database

@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from app.config.settings import settings
-from app.database.mongodb import client
+from app.database.mongodb import db
 
 app = FastAPI(
     title=settings.app_name,
@@ -10,19 +10,12 @@ app = FastAPI(
 
 @app.on_event("startup")
 async def startup_event():
-    # Test MongoDB connection on startup
-    try:
-        await client.server_info()  # This will raise an exception if the connection fails
-        print("Connected to MongoDB successfully.")
-    except Exception as e:
-        print(f"Failed to connect to MongoDB: {e}")
+    await db.connect()
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    # Close MongoDB connection on shutdown
-    await client.close()
-    print("MongoDB connection closed.")
+    await db.disconnect()
 
 
 @app.get("/")
