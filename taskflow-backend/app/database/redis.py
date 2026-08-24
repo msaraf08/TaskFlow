@@ -9,7 +9,8 @@ class RedisManager:
     async def connect(self):
         self.client = redis.from_url(
             settings.redis_url,
-            decode_responses=True
+            decode_responses=True,
+            protocol=2 # Fix for Redis 7 compatibility with redis-py 5.x
         )
 
         await self.client.ping()

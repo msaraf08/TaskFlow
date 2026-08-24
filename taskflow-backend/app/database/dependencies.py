@@ -3,3 +3,11 @@ from app.database.mongodb import db
 
 async def get_database():
     return db.database
+
+
+async def get_user_collection():
+    return db.database["users"]
+
+
+async def get_employee_collection():
+    return db.database["employees"]
