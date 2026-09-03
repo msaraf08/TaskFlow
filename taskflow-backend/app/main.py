@@ -6,15 +6,13 @@ from app.database.redis import redis_manager
 from app.routes.health import router as health_router
 from app.routes.auth import router as auth_router
 from app.routes.employees import router as employee_router
+from app.routes.teams import router as team_router
 
-
-app = FastAPI(
-    title=settings.app_name,
-    version="1.0.0"
-)
+app = FastAPI(title=settings.app_name, version="1.0.0")
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(employee_router)
+app.include_router(team_router)
 
 
 @app.on_event("startup")
@@ -27,5 +25,3 @@ async def startup_event():
 async def shutdown_event():
     await redis_manager.disconnect()
     await db.disconnect()
-
-

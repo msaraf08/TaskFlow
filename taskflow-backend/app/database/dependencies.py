@@ -11,3 +11,7 @@ async def get_user_collection():
 
 async def get_employee_collection():
     return db.database["employees"]
+
+
+async def get_team_collection():
+    return db.database["teams"]
