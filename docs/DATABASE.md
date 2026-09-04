@@ -111,8 +111,43 @@ Stores project records, timeline boundaries, status, team association, and audit
 
 ---
 
-### 5. Planned Collections
-- `tasks`
+### 5. `tasks`
+Stores task records, project association, assignee, priority, status lifecycle, due date, and audit timestamps. The `tasks` collection serves as the single source of truth for task records.
+
+```json
+{
+  "_id": "ObjectId",
+  "title": "string (1-200 chars)",
+  "description": "string (optional, max 5000 chars)",
+  "project_id": "string (ForeignKey -> projects._id)",
+  "assigned_to": "string (ForeignKey -> employees._id)",
+  "priority": "string (low | medium | high | urgent)",
+  "status": "string (todo | in_progress | completed | cancelled)",
+  "due_date": "ISODate (datetime)",
+  "created_by": "string (ForeignKey -> users._id)",
+  "created_at": "ISODate (datetime)",
+  "updated_at": "ISODate (datetime)"
+}
+```
+
+**Indexes:**
+- `_id`: Primary Key (Default)
+- `project_id`: Standard Index (`{ "project_id": 1 }`)
+- `assigned_to`: Standard Index (`{ "assigned_to": 1 }`)
+- `status`: Standard Index (`{ "status": 1 }`)
+- `priority`: Standard Index (`{ "priority": 1 }`)
+- `due_date`: Standard Index (`{ "due_date": 1 }`)
+- `created_by`: Standard Index (`{ "created_by": 1 }`)
+
+**Relationship & Eligibility Rules:**
+- `Task.project_id -> Project._id` and `Task.assigned_to -> Employee._id`.
+- No `project.task_ids`, `employee.task_ids`, or `team.task_ids`.
+- Assignee eligibility: To be assigned a task, an employee must be active and either in the project's `Team.member_ids` OR match `Team.manager_id`.
+- `created_by` references `users._id` (JWT `sub`) and is immutable.
+
+---
+
+### 6. Planned Collections
 - `comments`
 - `notifications`
 

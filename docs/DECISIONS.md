@@ -117,3 +117,33 @@
 ## Decision 020: Server-Side Date Range Consistency Validation
 - **Context:** Projects have start and end boundaries (`start_date` and `end_date`).
 - **Decision:** Validate `end_date >= start_date` both at schema ingestion via Pydantic model validators and at service level when partial updates merge existing project dates. Return `422 Unprocessable Entity` on violation.
+
+---
+
+## Decision 021: Task to Project and Assignee Normalized Relationships
+- **Context:** Tasks link to projects and assigned employees.
+- **Decision:** Use `project_id` and `assigned_to` on the `tasks` collection as normalized references. Avoid redundant `project.task_ids`, `employee.task_ids`, or `team.task_ids`.
+
+---
+
+## Decision 022: Task Assignment Eligibility Matrix (Members and Managers)
+- **Context:** Teams maintain `manager_id` separately from `member_ids`. Both team members and the team manager should be assignable to tasks within the team's projects.
+- **Decision:** An employee is eligible for assignment if `assigned_to in Team.member_ids` OR `assigned_to == Team.manager_id`. Inactive or non-affiliated employees are rejected with `403 Forbidden`.
+
+---
+
+## Decision 023: Dual-Project Manager Authorization and Ineligible Assignee Rejection
+- **Context:** Moving a task across projects via `PUT /tasks/{task_id}` could violate manager governance or leave an employee assigned to a project whose team they cannot work on.
+- **Decision:** When changing `project_id`, verify that the manager manages both current and target project teams (403 if not), and verify that the currently assigned employee is eligible on the target project's team (rejecting with `422 Unprocessable Entity` if ineligible).
+
+---
+
+## Decision 024: Explicit Rejection of Restricted Employee Update Fields (422)
+- **Context:** Employees are allowed to update their own assigned tasks (`title`, `description`, `priority`, `status`, `due_date`) but must not reassign projects or assignees.
+- **Decision:** When an employee submits `project_id` or `assigned_to` in `PUT /tasks/{task_id}`, the request is explicitly rejected with `422 Unprocessable Entity` rather than silently ignoring the fields.
+
+---
+
+## Decision 025: Deferred Due Date Cross-Project Validation
+- **Context:** Task `due_date` could theoretically be constrained within `project.start_date` and `project.end_date`.
+- **Decision:** For Phase 4 MVP, `due_date` is validated independently as a valid ISO date without cross-collection date range enforcement, deferring complex scheduling rules to future project phases.

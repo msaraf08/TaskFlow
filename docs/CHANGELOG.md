@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.5.0 - Phase 4: Task Management
+
+### Added
+- Task creation endpoint (`POST /tasks/`) with manager ownership verification and assignee eligibility validation (`member_ids` OR `manager_id`).
+- Task listing endpoint (`GET /tasks/`) with role-based visibility (all for Admins, managed projects for Managers, assigned & team-member tasks for Employees).
+- Task detail endpoint (`GET /tasks/{task_id}`) with team membership and manager access verification.
+- Task partial update endpoint (`PUT /tasks/{task_id}`) supporting employee updates on their own tasks (with strict 422 rejection if submitting `project_id`/`assigned_to`) and manager dual-project transfer verification.
+- Task hard deletion endpoint (`DELETE /tasks/{task_id}`) returning `204 No Content`.
+- Task prioritization (`low`, `medium`, `high`, `urgent`) and status workflow (`todo`, `in_progress`, `completed`, `cancelled`).
+- MongoDB indexes for `tasks` collection on `project_id`, `assigned_to`, `status`, `priority`, `due_date`, and `created_by`.
+- Automated test suite expanded to 29 passing test cases.
+
 ## v0.4.0 - Phase 3: Project Management
 
 ### Added

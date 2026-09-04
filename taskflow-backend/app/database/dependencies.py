@@ -19,3 +19,7 @@ async def get_team_collection():
 
 async def get_project_collection():
     return db.database["projects"]
+
+
+async def get_task_collection():
+    return db.database["tasks"]

@@ -21,6 +21,12 @@ class Database:
             await self.database["projects"].create_index("team_id")
             await self.database["projects"].create_index("created_by")
             await self.database["projects"].create_index("status")
+            await self.database["tasks"].create_index("project_id")
+            await self.database["tasks"].create_index("assigned_to")
+            await self.database["tasks"].create_index("status")
+            await self.database["tasks"].create_index("priority")
+            await self.database["tasks"].create_index("due_date")
+            await self.database["tasks"].create_index("created_by")
             print("✅ MongoDB Indexes Initialized")
 
     async def disconnect(self):

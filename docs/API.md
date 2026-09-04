@@ -418,3 +418,91 @@ Tokens are validated against cryptographic signatures, expiration time, and acti
   - `401 Unauthorized`: Missing or invalid authentication token.
   - `403 Forbidden`: Inactive user or manager does not manage the project's team.
   - `404 Not Found`: Project does not exist.
+
+---
+
+### 6. Task Management (`/tasks`)
+
+#### `POST /tasks/`
+- **Description:** Creates a new task within a project and assigns it to an eligible employee. Validates manager ownership on the project's team and employee eligibility (`member_ids` OR `manager_id`).
+- **Access:** Admin or Manager of project's team (`team.manager_id == manager.employee_id`)
+- **Request Body (`TaskCreateSchema`):**
+  ```json
+  {
+    "title": "Build Auth API",
+    "description": "Implement JWT endpoints",
+    "project_id": "6a99d4398a5cbc1907f06fa1",
+    "assigned_to": "6a99d4398a5cbc1907f06f9c",
+    "priority": "high",
+    "status": "todo",
+    "due_date": "2026-09-20"
+  }
+  ```
+- **Response `201 Created` (`TaskResponseSchema`):**
+  ```json
+  {
+    "id": "6a99d4398a5cbc1907f06fb1",
+    "title": "Build Auth API",
+    "description": "Implement JWT endpoints",
+    "project_id": "6a99d4398a5cbc1907f06fa1",
+    "assigned_to": "6a99d4398a5cbc1907f06f9c",
+    "priority": "high",
+    "status": "todo",
+    "due_date": "2026-09-20",
+    "created_by": "6a99d4398a5cbc1907f06f9a",
+    "created_at": "2026-09-04T15:50:00.000Z",
+    "updated_at": "2026-09-04T15:50:00.000Z"
+  }
+  ```
+- **Errors:**
+  - `400 Bad Request`: Malformed `project_id` or `assigned_to`.
+  - `401 Unauthorized`: Missing or invalid authentication token.
+  - `403 Forbidden`: Inactive user, manager not managing the project's team, inactive assigned employee, or assigned employee not eligible for the project's team.
+  - `404 Not Found`: Project, project team, or assigned employee not found.
+  - `422 Unprocessable Entity`: Validation failure (empty title, invalid priority/status enum, or extra forbidden fields).
+
+#### `GET /tasks/`
+- **Description:** Retrieves tasks visible to the authenticated user. Admins see all tasks; Managers see tasks for projects on teams they manage; Employees see tasks assigned to them AND tasks in projects of teams where they are a member.
+- **Query Parameters:**
+  - `project_id` (optional): Filter tasks by project.
+  - `assigned_to` (optional): Filter tasks by assignee.
+- **Access:** Authenticated (Admin, Manager, Employee)
+- **Response `200 OK`:** Array of `TaskResponseSchema` (sorted by `created_at` descending, returns `[]` if none).
+
+#### `GET /tasks/{task_id}`
+- **Description:** Retrieves task details by ID. Validates manager ownership or employee visibility (assigned or team member).
+- **Access:** Authenticated (Admin, Manager of project's team, or Employee assigned / member of project's team)
+- **Response `200 OK`:** `TaskResponseSchema`.
+- **Errors:**
+  - `400 Bad Request`: Malformed `task_id`.
+  - `401 Unauthorized`: Missing or invalid authentication token.
+  - `403 Forbidden`: Unauthorized user (manager does not manage team, or employee not assigned nor member).
+  - `404 Not Found`: Task or referenced project/team not found.
+
+#### `PUT /tasks/{task_id}`
+- **Description:** Performs a partial update on task fields (`title`, `description`, `project_id`, `assigned_to`, `priority`, `status`, `due_date`). Employees can only update their own assigned tasks and are restricted to updating `title`, `description`, `priority`, `status`, `due_date` (submitting `project_id` or `assigned_to` returns 422).
+- **Access:** Admin, Manager of project's team, or assigned Employee
+- **Request Body (`TaskUpdateSchema`):**
+  ```json
+  {
+    "status": "in_progress",
+    "priority": "urgent"
+  }
+  ```
+- **Response `200 OK`:** `TaskResponseSchema`.
+- **Errors:**
+  - `400 Bad Request`: Malformed `task_id`, `project_id`, or `assigned_to`.
+  - `401 Unauthorized`: Missing or invalid authentication token.
+  - `403 Forbidden`: Unauthorized manager, employee not assigned to task, or newly assigned employee not eligible.
+  - `404 Not Found`: Task, project, team, or employee not found.
+  - `422 Unprocessable Entity`: Employee submitting `project_id`/`assigned_to`, moving task to project where current assignee is ineligible, invalid enums, or extra forbidden fields.
+
+#### `DELETE /tasks/{task_id}`
+- **Description:** Permanently removes a task document from MongoDB.
+- **Access:** Admin or Manager of task's project team (`team.manager_id == manager.employee_id`)
+- **Response `204 No Content`**
+- **Errors:**
+  - `400 Bad Request`: Malformed `task_id`.
+  - `401 Unauthorized`: Missing or invalid authentication token.
+  - `403 Forbidden`: Inactive user, employee role, or manager does not manage the task's project team.
+  - `404 Not Found`: Task not found.

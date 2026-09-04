@@ -111,3 +111,37 @@ pip install bcrypt==4.3.0
   - *Resolution:* Provide a non-empty string between 1 and 120 characters.
 - **Cause 4 (Extra / Immutable Fields in Payload):** Attempted to send unmodeled or immutable fields (e.g. `created_by`, `created_at`).
   - *Resolution:* Do not pass server-managed audit fields in request payloads.
+
+---
+
+## 5. Task Management Error Scenarios
+
+### HTTP 400 Bad Request
+- **Cause 1 (Malformed ObjectId in Path or Body):** `task_id`, `project_id`, or `assigned_to` is not a valid 24-character hexadecimal string.
+  - *Resolution:* Provide valid 24-hex-character MongoDB ObjectIds.
+
+### HTTP 403 Forbidden
+- **Cause 1 (Manager Managing Unassigned Project's Tasks):** Manager attempted to create, update, or delete a task on a project belonging to a team they do not manage.
+  - *Resolution:* Managers can only manage tasks within projects belonging to their own teams.
+- **Cause 2 (Assigned Employee Not Eligible):** Attempted to assign a task to an employee who is neither in `team.member_ids` nor matches `team.manager_id`.
+  - *Resolution:* Ensure assigned employees belong to the project team before assignment.
+- **Cause 3 (Assigned Employee Inactive):** Attempted to assign a task to an employee with `status: "inactive"`.
+  - *Resolution:* Reactivate the employee profile before assigning tasks.
+- **Cause 4 (Employee Updating Another Assignee's Task):** An employee attempted `PUT /tasks/{id}` on a task assigned to someone else.
+  - *Resolution:* Employees may only update their own assigned tasks.
+- **Cause 5 (Employee Deleting/Creating Task):** An employee attempted `POST /tasks/` or `DELETE /tasks/{id}`.
+  - *Resolution:* Task creation and deletion are restricted to Admins and Team Managers.
+
+### HTTP 404 Not Found
+- **Cause 1 (Task Not Found):** Specified `task_id` does not exist in `tasks`.
+  - *Resolution:* Verify the task ID.
+- **Cause 2 (Project, Team, or Employee Not Found):** Specified `project_id` or `assigned_to` does not exist in the database.
+  - *Resolution:* Verify entity existence prior to referencing in tasks.
+
+### HTTP 422 Unprocessable Entity
+- **Cause 1 (Employee Modifying Project or Assignee):** An employee included `project_id` or `assigned_to` in a task update payload.
+  - *Resolution:* Employees cannot reassign tasks or transfer projects. Strip these fields from the update payload.
+- **Cause 2 (Project Transfer Assignee Ineligible):** A manager moved a task to a project whose team does not include the current assignee as a member or manager.
+  - *Resolution:* Reassign the task to an eligible team member before or during the project transfer.
+- **Cause 3 (Invalid Enums / Empty Title):** `priority` is not in `[low, medium, high, urgent]`, `status` is not in `[todo, in_progress, completed, cancelled]`, or `title` is empty/whitespace.
+  - *Resolution:* Provide valid priority, status, and non-empty title strings.

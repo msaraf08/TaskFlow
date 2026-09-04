@@ -9,6 +9,7 @@ from app.routes.auth import router as auth_router
 from app.routes.employees import router as employee_router
 from app.routes.teams import router as team_router
 from app.routes.projects import router as project_router
+from app.routes.tasks import router as task_router
 
 
 @asynccontextmanager
@@ -32,3 +33,4 @@ app.include_router(auth_router)
 app.include_router(employee_router)
 app.include_router(team_router)
 app.include_router(project_router)
+app.include_router(task_router)
