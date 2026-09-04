@@ -1,14 +1,18 @@
+from typing import List
+from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.roles import require_roles
-from app.core.security import hash_password
+from app.core.security import hash_password, generate_temporary_password
 from app.database.dependencies import (
     get_user_collection,
     get_employee_collection
 )
 from app.schemas.employee_schema import (
     EmployeeCreateSchema,
-    EmployeeUpdateSchema
+    EmployeeUpdateSchema,
+    EmployeeResponseSchema,
+    EmployeeCreateResponseSchema
 )
 from app.services.employee_service import (
     create_employee,
@@ -18,14 +22,17 @@ from app.services.employee_service import (
     deactivate_employee
 )
 
-
 router = APIRouter(
     prefix="/employees",
     tags=["Employees"]
 )
 
 
-@router.post("/")
+@router.post(
+    "/",
+    status_code=status.HTTP_201_CREATED,
+    response_model=EmployeeCreateResponseSchema
+)
 async def add_employee(
     employee: EmployeeCreateSchema,
     employee_collection=Depends(get_employee_collection),
@@ -38,15 +45,18 @@ async def add_employee(
 
     if existing_user:
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
         )
+
+    temp_password = employee.initial_password or generate_temporary_password()
 
     user_data = {
         "name": employee.name,
         "email": employee.email,
-        "password": hash_password("Temp@123"),
-        "role": employee.role
+        "password": hash_password(temp_password),
+        "role": employee.role,
+        "status": "active"
     }
 
     user_result = await user_collection.insert_one(user_data)
@@ -57,10 +67,14 @@ async def add_employee(
         str(user_result.inserted_id)
     )
 
+    employee_data["temporary_password"] = temp_password
     return employee_data
 
 
-@router.get("/")
+@router.get(
+    "/",
+    response_model=List[EmployeeResponseSchema]
+)
 async def list_employees(
     collection=Depends(get_employee_collection),
     current_user=Depends(require_roles("admin", "manager"))
@@ -68,7 +82,10 @@ async def list_employees(
     return await get_all_employees(collection)
 
 
-@router.get("/{employee_id}")
+@router.get(
+    "/{employee_id}",
+    response_model=EmployeeResponseSchema
+)
 async def get_employee(
     employee_id: str,
     collection=Depends(get_employee_collection),
@@ -85,15 +102,19 @@ async def get_employee(
     return employee
 
 
-@router.put("/{employee_id}")
+@router.put(
+    "/{employee_id}",
+    response_model=EmployeeResponseSchema
+)
 async def edit_employee(
     employee_id: str,
     employee: EmployeeUpdateSchema,
-    collection=Depends(get_employee_collection),
+    employee_collection=Depends(get_employee_collection),
+    user_collection=Depends(get_user_collection),
     current_user=Depends(require_roles("admin"))
 ):
     updated_employee = await update_employee(
-        collection,
+        employee_collection,
         employee_id,
         employee
     )
@@ -104,25 +125,52 @@ async def edit_employee(
             detail="Employee not found"
         )
 
+    # Sync name/role to user collection if provided
+    user_updates = {}
+    if employee.name is not None:
+        user_updates["name"] = employee.name
+    if employee.role is not None:
+        user_updates["role"] = employee.role
+
+    if user_updates and updated_employee.get("user_id"):
+        try:
+            await user_collection.update_one(
+                {"_id": ObjectId(updated_employee["user_id"])},
+                {"$set": user_updates}
+            )
+        except Exception:
+            pass
+
     return updated_employee
 
 
 @router.patch("/{employee_id}/deactivate")
 async def deactivate(
     employee_id: str,
-    collection=Depends(get_employee_collection),
+    employee_collection=Depends(get_employee_collection),
+    user_collection=Depends(get_user_collection),
     current_user=Depends(require_roles("admin"))
 ):
-    success = await deactivate_employee(
-        collection,
+    deactivated = await deactivate_employee(
+        employee_collection,
         employee_id
     )
 
-    if not success:
+    if not deactivated:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Employee not found"
         )
+
+    # Deactivate corresponding user account so token/login is revoked
+    if deactivated.get("user_id"):
+        try:
+            await user_collection.update_one(
+                {"_id": ObjectId(deactivated["user_id"])},
+                {"$set": {"status": "inactive"}}
+            )
+        except Exception:
+            pass
 
     return {
         "message": "Employee deactivated successfully"

@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.config.settings import settings
@@ -8,20 +9,24 @@ from app.routes.auth import router as auth_router
 from app.routes.employees import router as employee_router
 from app.routes.teams import router as team_router
 
-app = FastAPI(title=settings.app_name, version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await db.connect()
+    await db.init_indexes()
+    await redis_manager.connect()
+    yield
+    await redis_manager.disconnect()
+    await db.disconnect()
+
+
+app = FastAPI(
+    title=settings.app_name,
+    version="1.0.0",
+    lifespan=lifespan
+)
+
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(employee_router)
 app.include_router(team_router)
-
-
-@app.on_event("startup")
-async def startup_event():
-    await db.connect()
-    await redis_manager.connect()
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    await redis_manager.disconnect()
-    await db.disconnect()

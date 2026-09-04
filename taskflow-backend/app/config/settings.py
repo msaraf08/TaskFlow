@@ -2,20 +2,20 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    app_name: str
-    app_env: str
+    app_name: str = "TaskFlow"
+    app_env: str = "development"
 
-    mongodb_url: str
-    mongodb_database: str
+    mongodb_url: str = "mongodb://localhost:27017"
+    mongodb_database: str = "taskflow"
 
-    redis_url: str
+    redis_url: str = "redis://localhost:6379"
 
-    jwt_secret: str
-    jwt_algorithm: str
-    access_token_expire_minutes: int
+    jwt_secret: str = "supersecretkey"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 30
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(".env", "taskflow-backend/.env"),
         extra="ignore"
     )
 
