@@ -498,7 +498,7 @@ Tokens are validated against cryptographic signatures, expiration time, and acti
   - `422 Unprocessable Entity`: Employee submitting `project_id`/`assigned_to`, moving task to project where current assignee is ineligible, invalid enums, or extra forbidden fields.
 
 #### `DELETE /tasks/{task_id}`
-- **Description:** Permanently removes a task document from MongoDB.
+- **Description:** Permanently removes a task document from MongoDB and cascade-deletes all associated comments. Related historical activity trail records are preserved.
 - **Access:** Admin or Manager of task's project team (`team.manager_id == manager.employee_id`)
 - **Response `204 No Content`**
 - **Errors:**
@@ -506,3 +506,123 @@ Tokens are validated against cryptographic signatures, expiration time, and acti
   - `401 Unauthorized`: Missing or invalid authentication token.
   - `403 Forbidden`: Inactive user, employee role, or manager does not manage the task's project team.
   - `404 Not Found`: Task not found.
+
+---
+
+### 7. Comments (`/tasks/{task_id}/comments`, `/comments/{comment_id}`)
+
+#### `POST /tasks/{task_id}/comments`
+- **Description:** Creates a new comment on an existing task.
+- **Access:** Authenticated users authorized to view the task:
+  - Admin: Any task.
+  - Manager: Tasks on projects of managed teams.
+  - Employee: Tasks assigned to them or in projects of teams where they are a member.
+- **Request Body (`CommentCreateSchema`):**
+  ```json
+  {
+    "content": "Implemented user authentication and wrote unit tests."
+  }
+  ```
+- **Response `201 Created` (`CommentResponseSchema`):**
+  ```json
+  {
+    "id": "6a99d4398a5cbc1907f06fc1",
+    "task_id": "6a99d4398a5cbc1907f06fb1",
+    "user_id": "6a99d4398a5cbc1907f06f9a",
+    "content": "Implemented user authentication and wrote unit tests.",
+    "created_at": "2026-09-04T16:00:00.000Z",
+    "updated_at": "2026-09-04T16:00:00.000Z"
+  }
+  ```
+- **Errors:**
+  - `400 Bad Request`: Malformed `task_id`.
+  - `401 Unauthorized`: Missing or invalid token.
+  - `403 Forbidden`: Inactive user or user not authorized to view/comment on the task.
+  - `404 Not Found`: Task not found.
+  - `422 Unprocessable Entity`: Empty content, content exceeding 2000 chars, or extra fields.
+
+#### `GET /tasks/{task_id}/comments`
+- **Description:** Lists comments for a task sorted by `created_at` descending with pagination.
+- **Query Parameters:**
+  - `skip` (int, default 0, ge 0)
+  - `limit` (int, default 20, ge 1, le 100)
+- **Access:** Authenticated users authorized to view the task.
+- **Response `200 OK`:** Array of `CommentResponseSchema` (returns `[]` if no comments).
+
+#### `PUT /comments/{comment_id}`
+- **Description:** Edits the content of an existing comment. Updates `updated_at`.
+- **Access:**
+  - Admin: Any comment.
+  - Manager: Comments on tasks in managed teams' projects.
+  - Employee: Own comments only (`comment.user_id == JWT user_id`).
+- **Request Body (`CommentUpdateSchema`):**
+  ```json
+  {
+    "content": "Updated comment details with test results."
+  }
+  ```
+- **Response `200 OK`:** `CommentResponseSchema`.
+- **Errors:**
+  - `400 Bad Request`: Malformed `comment_id`.
+  - `401 Unauthorized`: Missing or invalid token.
+  - `403 Forbidden`: Inactive user, manager not managing task's team, or employee attempting to edit another user's comment.
+  - `404 Not Found`: Comment or referenced task not found.
+  - `422 Unprocessable Entity`: Empty content or content > 2000 characters.
+
+#### `DELETE /comments/{comment_id}`
+- **Description:** Permanently deletes a comment document.
+- **Access:**
+  - Admin: Any comment.
+  - Manager: Comments on tasks in managed teams' projects.
+  - Employee: Own comments only (`comment.user_id == JWT user_id`).
+- **Response `204 No Content`**
+- **Errors:**
+  - `400 Bad Request`: Malformed `comment_id`.
+  - `401 Unauthorized`: Missing or invalid token.
+  - `403 Forbidden`: Inactive user, manager not managing task's team, or employee attempting to delete another user's comment.
+  - `404 Not Found`: Comment or referenced task not found.
+
+---
+
+### 8. Activities & Audit Trail (`/activities`)
+
+#### `GET /activities/`
+- **Description:** Retrieves system activity and audit trail records with scoped visibility and query filtering.
+- **Query Parameters:**
+  - `task_id` (optional string): Filter by task ObjectId.
+  - `project_id` (optional string): Filter by project ObjectId.
+  - `team_id` (optional string): Filter by team ObjectId.
+  - `actor_user_id` (optional string): Filter by actor's user ID.
+  - `action` (optional string): Filter by action enum (`task_created`, `task_updated`, `task_deleted`, `task_assigned_changed`, `task_status_changed`, `task_priority_changed`, `task_project_changed`, `comment_created`, `comment_updated`, `comment_deleted`).
+  - `entity_type` (optional string): Filter by entity type enum (`task`, `comment`, `project`, `team`).
+  - `skip` (int, default 0, ge 0)
+  - `limit` (int, default 20, ge 1, le 100)
+- **Access & Scoping:**
+  - Admin: Sees all activities.
+  - Manager: Sees activities where `team_id` matches a team they manage.
+  - Employee: Sees activities for tasks visible to them (assigned to them or in a project of a team where they are a member). Activities without a visible `task_id` are not accessible to employees.
+- **Response `200 OK`:** Array of `ActivityResponseSchema` sorted by `created_at` descending:
+  ```json
+  [
+    {
+      "id": "6a99d4398a5cbc1907f06fd1",
+      "actor_user_id": "6a99d4398a5cbc1907f06f9a",
+      "action": "task_status_changed",
+      "entity_type": "task",
+      "entity_id": "6a99d4398a5cbc1907f06fb1",
+      "task_id": "6a99d4398a5cbc1907f06fb1",
+      "project_id": "6a99d4398a5cbc1907f06fa1",
+      "team_id": "6a99d4398a5cbc1907f06f9e",
+      "metadata": {
+        "old_value": "todo",
+        "new_value": "in_progress"
+      },
+      "created_at": "2026-09-04T16:15:00.000Z"
+    }
+  ]
+  ```
+- **Errors:**
+  - `400 Bad Request`: Malformed `task_id`, `project_id`, or `team_id`.
+  - `401 Unauthorized`: Missing or invalid token.
+  - `403 Forbidden`: Inactive user account.
+  - `422 Unprocessable Entity`: Invalid `action` or `entity_type` parameter.

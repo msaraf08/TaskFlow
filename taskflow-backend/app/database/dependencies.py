@@ -23,3 +23,11 @@ async def get_project_collection():
 
 async def get_task_collection():
     return db.database["tasks"]
+
+
+async def get_comment_collection():
+    return db.database["comments"]
+
+
+async def get_activity_collection():
+    return db.database["activities"]

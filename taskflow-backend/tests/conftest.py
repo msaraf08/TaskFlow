@@ -11,7 +11,9 @@ from app.database.dependencies import (
     get_employee_collection,
     get_team_collection,
     get_project_collection,
-    get_task_collection
+    get_task_collection,
+    get_comment_collection,
+    get_activity_collection,
 )
 
 
@@ -26,6 +28,14 @@ class InMemoryAsyncCursor:
             key=lambda d: d.get(field) if d.get(field) is not None else datetime.min,
             reverse=reverse
         )
+        return self
+
+    def skip(self, count: int):
+        self.documents = self.documents[count:]
+        return self
+
+    def limit(self, count: int):
+        self.documents = self.documents[:count]
         return self
 
     def __aiter__(self):
@@ -140,6 +150,11 @@ class InMemoryAsyncCollection:
                 return DeleteResult(1)
         return DeleteResult(0)
 
+    async def delete_many(self, query: Dict[str, Any]) -> DeleteResult:
+        initial_len = len(self.docs)
+        self.docs = [d for d in self.docs if not self._matches(d, query)]
+        return DeleteResult(initial_len - len(self.docs))
+
     async def count_documents(self, query: Dict[str, Any]) -> int:
         return sum(1 for d in self.docs if self._matches(d, query))
 
@@ -173,18 +188,32 @@ def mock_tasks_collection():
 
 
 @pytest.fixture
+def mock_comments_collection():
+    return InMemoryAsyncCollection()
+
+
+@pytest.fixture
+def mock_activities_collection():
+    return InMemoryAsyncCollection()
+
+
+@pytest.fixture
 async def client(
     mock_users_collection,
     mock_employees_collection,
     mock_teams_collection,
     mock_projects_collection,
-    mock_tasks_collection
+    mock_tasks_collection,
+    mock_comments_collection,
+    mock_activities_collection,
 ):
     app.dependency_overrides[get_user_collection] = lambda: mock_users_collection
     app.dependency_overrides[get_employee_collection] = lambda: mock_employees_collection
     app.dependency_overrides[get_team_collection] = lambda: mock_teams_collection
     app.dependency_overrides[get_project_collection] = lambda: mock_projects_collection
     app.dependency_overrides[get_task_collection] = lambda: mock_tasks_collection
+    app.dependency_overrides[get_comment_collection] = lambda: mock_comments_collection
+    app.dependency_overrides[get_activity_collection] = lambda: mock_activities_collection
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:

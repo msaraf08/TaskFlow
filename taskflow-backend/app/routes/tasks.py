@@ -7,7 +7,9 @@ from app.database.dependencies import (
     get_task_collection,
     get_project_collection,
     get_team_collection,
-    get_employee_collection
+    get_employee_collection,
+    get_comment_collection,
+    get_activity_collection,
 )
 from app.schemas.task_schema import (
     TaskCreateSchema,
@@ -23,6 +25,8 @@ from app.services.task_service import (
     delete_task,
     validate_project_and_team
 )
+from app.services.activity_service import log_activity
+from app.services.comment_service import delete_comments_by_task_id
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
@@ -38,6 +42,7 @@ async def add_task(
     project_collection=Depends(get_project_collection),
     team_collection=Depends(get_team_collection),
     employee_collection=Depends(get_employee_collection),
+    activity_collection=Depends(get_activity_collection),
     current_user=Depends(require_roles("admin", "manager")),
 ):
     _, team = await validate_project_and_team(
@@ -54,7 +59,7 @@ async def add_task(
                 detail="You do not have permission to create tasks for this project's team"
             )
 
-    return await create_task(
+    created_task = await create_task(
         task_collection,
         project_collection,
         team_collection,
@@ -62,6 +67,20 @@ async def add_task(
         task,
         current_user["user_id"]
     )
+
+    await log_activity(
+        activity_collection=activity_collection,
+        actor_user_id=current_user["user_id"],
+        action="task_created",
+        entity_type="task",
+        entity_id=created_task["id"],
+        task_id=created_task["id"],
+        project_id=created_task["project_id"],
+        team_id=str(team["_id"]),
+        metadata={"title": created_task.get("title")},
+    )
+
+    return created_task
 
 
 @router.get(
@@ -234,6 +253,7 @@ async def edit_task(
     project_collection=Depends(get_project_collection),
     team_collection=Depends(get_team_collection),
     employee_collection=Depends(get_employee_collection),
+    activity_collection=Depends(get_activity_collection),
     current_user=Depends(get_current_user),
 ):
     existing_task = await get_task_by_id(task_collection, task_id)
@@ -291,7 +311,7 @@ async def edit_task(
                     detail="You do not have permission to move tasks to target project's team"
                 )
 
-    return await update_task(
+    updated_task = await update_task(
         task_collection,
         project_collection,
         team_collection,
@@ -302,6 +322,98 @@ async def edit_task(
         current_project,
         current_team
     )
+
+    update_dict = {
+        key: value
+        for key, value in task.model_dump().items()
+        if value is not None
+    }
+
+    if update_dict:
+        final_team_id = str(current_team["_id"])
+        if "project_id" in update_dict and update_dict["project_id"] != existing_task["project_id"]:
+            _, final_team = await validate_project_and_team(
+                project_collection,
+                team_collection,
+                update_dict["project_id"]
+            )
+            final_team_id = str(final_team["_id"])
+
+        if len(update_dict) == 1:
+            if "assigned_to" in update_dict and update_dict["assigned_to"] != existing_task.get("assigned_to"):
+                await log_activity(
+                    activity_collection=activity_collection,
+                    actor_user_id=current_user["user_id"],
+                    action="task_assigned_changed",
+                    entity_type="task",
+                    entity_id=task_id,
+                    task_id=task_id,
+                    project_id=updated_task.get("project_id"),
+                    team_id=final_team_id,
+                    metadata={"old_value": existing_task.get("assigned_to"), "new_value": str(update_dict["assigned_to"])},
+                )
+            elif "status" in update_dict and update_dict["status"] != existing_task.get("status"):
+                await log_activity(
+                    activity_collection=activity_collection,
+                    actor_user_id=current_user["user_id"],
+                    action="task_status_changed",
+                    entity_type="task",
+                    entity_id=task_id,
+                    task_id=task_id,
+                    project_id=updated_task.get("project_id"),
+                    team_id=final_team_id,
+                    metadata={"old_value": existing_task.get("status"), "new_value": str(update_dict["status"])},
+                )
+            elif "priority" in update_dict and update_dict["priority"] != existing_task.get("priority"):
+                await log_activity(
+                    activity_collection=activity_collection,
+                    actor_user_id=current_user["user_id"],
+                    action="task_priority_changed",
+                    entity_type="task",
+                    entity_id=task_id,
+                    task_id=task_id,
+                    project_id=updated_task.get("project_id"),
+                    team_id=final_team_id,
+                    metadata={"old_value": existing_task.get("priority"), "new_value": str(update_dict["priority"])},
+                )
+            elif "project_id" in update_dict and update_dict["project_id"] != existing_task.get("project_id"):
+                await log_activity(
+                    activity_collection=activity_collection,
+                    actor_user_id=current_user["user_id"],
+                    action="task_project_changed",
+                    entity_type="task",
+                    entity_id=task_id,
+                    task_id=task_id,
+                    project_id=updated_task.get("project_id"),
+                    team_id=final_team_id,
+                    metadata={"old_value": existing_task.get("project_id"), "new_value": str(update_dict["project_id"])},
+                )
+            else:
+                await log_activity(
+                    activity_collection=activity_collection,
+                    actor_user_id=current_user["user_id"],
+                    action="task_updated",
+                    entity_type="task",
+                    entity_id=task_id,
+                    task_id=task_id,
+                    project_id=updated_task.get("project_id"),
+                    team_id=final_team_id,
+                    metadata={"title": updated_task.get("title")},
+                )
+        else:
+            await log_activity(
+                activity_collection=activity_collection,
+                actor_user_id=current_user["user_id"],
+                action="task_updated",
+                entity_type="task",
+                entity_id=task_id,
+                task_id=task_id,
+                project_id=updated_task.get("project_id"),
+                team_id=final_team_id,
+                metadata={"title": updated_task.get("title")},
+            )
+
+    return updated_task
 
 
 @router.delete(
@@ -314,6 +426,8 @@ async def remove_task(
     project_collection=Depends(get_project_collection),
     team_collection=Depends(get_team_collection),
     employee_collection=Depends(get_employee_collection),
+    comment_collection=Depends(get_comment_collection),
+    activity_collection=Depends(get_activity_collection),
     current_user=Depends(require_roles("admin", "manager")),
 ):
     existing_task = await get_task_by_id(task_collection, task_id)
@@ -323,12 +437,13 @@ async def remove_task(
             detail="Task not found"
         )
 
+    _, current_team = await validate_project_and_team(
+        project_collection,
+        team_collection,
+        existing_task["project_id"]
+    )
+
     if current_user.get("role") == "manager":
-        _, current_team = await validate_project_and_team(
-            project_collection,
-            team_collection,
-            existing_task["project_id"]
-        )
         emp = await employee_collection.find_one({"user_id": current_user["user_id"]})
         if not emp or current_team.get("manager_id") != str(emp["_id"]):
             raise HTTPException(
@@ -336,5 +451,23 @@ async def remove_task(
                 detail="You do not have permission to delete tasks for this project's team"
             )
 
+    task_title = existing_task.get("title")
+    task_project_id = existing_task.get("project_id")
+    task_team_id = str(current_team["_id"])
+
     await delete_task(task_collection, task_id)
+    await delete_comments_by_task_id(comment_collection, task_id)
+
+    await log_activity(
+        activity_collection=activity_collection,
+        actor_user_id=current_user["user_id"],
+        action="task_deleted",
+        entity_type="task",
+        entity_id=task_id,
+        task_id=task_id,
+        project_id=task_project_id,
+        team_id=task_team_id,
+        metadata={"title": task_title},
+    )
+
     return Response(status_code=status.HTTP_204_NO_CONTENT)

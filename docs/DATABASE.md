@@ -147,8 +147,67 @@ Stores task records, project association, assignee, priority, status lifecycle, 
 
 ---
 
-### 6. Planned Collections
-- `comments`
+### 6. `comments`
+Stores discussion comments on tasks. Comments reference tasks by `task_id` and authors by `user_id`.
+
+```json
+{
+  "_id": "ObjectId",
+  "task_id": "string (ForeignKey -> tasks._id)",
+  "user_id": "string (ForeignKey -> users._id, JWT sub)",
+  "content": "string (1-2000 chars)",
+  "created_at": "ISODate (datetime)",
+  "updated_at": "ISODate (datetime)"
+}
+```
+
+**Indexes:**
+- `_id`: Primary Key (Default)
+- `task_id`: Standard Index (`{ "task_id": 1 }`)
+- `user_id`: Standard Index (`{ "user_id": 1 }`)
+- `created_at`: Standard Index (`{ "created_at": 1 }`)
+
+**Relationship Rules:**
+- `task_id` references `tasks._id`. Comments are cascade-deleted when a task is deleted.
+- `user_id` stores the JWT `sub` of the author (immutable).
+- Comments are queried by `task_id`. No `task.comment_ids` array is stored.
+
+---
+
+### 7. `activities`
+Stores system activity and audit trail records. Activities capture state-modifying actions across tasks, comments, projects, and teams.
+
+```json
+{
+  "_id": "ObjectId",
+  "actor_user_id": "string (ForeignKey -> users._id, JWT sub)",
+  "action": "string (task_created | task_updated | task_deleted | task_assigned_changed | task_status_changed | task_priority_changed | task_project_changed | comment_created | comment_updated | comment_deleted)",
+  "entity_type": "string (task | comment | project | team)",
+  "entity_id": "string (ObjectId string of affected entity)",
+  "task_id": "string (optional, ObjectId string)",
+  "project_id": "string (optional, ObjectId string)",
+  "team_id": "string (optional, ObjectId string)",
+  "metadata": "object (optional flat dict, max 5 key-value pairs, allowed keys: old_value, new_value, title, name, assigned_to, content_preview)",
+  "created_at": "ISODate (datetime)"
+}
+```
+
+**Indexes:**
+- `_id`: Primary Key (Default)
+- `actor_user_id`: Standard Index (`{ "actor_user_id": 1 }`)
+- `entity_type, entity_id`: Compound Index (`{ "entity_type": 1, "entity_id": 1 }`)
+- `task_id`: Standard Index (`{ "task_id": 1 }`)
+- `project_id`: Standard Index (`{ "project_id": 1 }`)
+- `team_id`: Standard Index (`{ "team_id": 1 }`)
+- `created_at`: Standard Index (`{ "created_at": 1 }`)
+
+**Audit Trail Integrity Rules:**
+- Historical activity records are preserved permanently and are NOT deleted when entities (e.g. tasks) are deleted.
+- Metadata never contains sensitive data (passwords, JWTs, API keys, or full comment content). Comment previews are capped at 100 characters.
+
+---
+
+### 8. Planned Collections
 - `notifications`
 
 ---

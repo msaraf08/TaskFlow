@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.6.0 - Phase 5: Comments + Activity / Audit Trail
+
+### Added
+- Comment creation endpoint (`POST /tasks/{task_id}/comments`) with scoped task view authorization and user ID extraction from JWT `sub`.
+- Comment listing endpoint (`GET /tasks/{task_id}/comments`) with descending timestamp sorting and pagination (`skip`/`limit`).
+- Comment edit endpoint (`PUT /comments/{comment_id}`) restricting edits to author (employees) or team managers and admins.
+- Comment deletion endpoint (`DELETE /comments/{comment_id}`) with role-based moderation.
+- Cascade deletion of task comments upon task deletion (`DELETE /tasks/{task_id}`).
+- Activity / Audit Trail model and service layer logging helper (`log_activity`) capturing task lifecycle, field modifications (`task_assigned_changed`, `task_status_changed`, `task_priority_changed`, `task_project_changed`), and comment actions.
+- Activity listing endpoint (`GET /activities/`) with query filters (`task_id`, `project_id`, `team_id`, `actor_user_id`, `action`, `entity_type`), role-based scoping (Admin all, Manager managed teams, Employee visible tasks), and pagination.
+- MongoDB indexes on `comments` (`task_id`, `user_id`, `created_at`) and `activities` (`actor_user_id`, compound `entity_type + entity_id`, `task_id`, `project_id`, `team_id`, `created_at`).
+- Automated test suite expanded to 33 passing test suites covering 120+ assertions.
+
 ## v0.5.0 - Phase 4: Task Management
 
 ### Added

@@ -147,3 +147,33 @@
 ## Decision 025: Deferred Due Date Cross-Project Validation
 - **Context:** Task `due_date` could theoretically be constrained within `project.start_date` and `project.end_date`.
 - **Decision:** For Phase 4 MVP, `due_date` is validated independently as a valid ISO date without cross-collection date range enforcement, deferring complex scheduling rules to future project phases.
+
+---
+
+## Decision 026: Comment Author User ID Binding
+- **Context:** Comments need author identification that survives employee profile changes or team transfers.
+- **Decision:** Store `user_id` from the verified JWT `sub` claim in the `comments` document instead of `employee_id`. The client cannot supply `user_id` in request payloads.
+
+---
+
+## Decision 027: Cascade Deletion for Task Comments
+- **Context:** Deleting a task could leave orphaned comments in the database.
+- **Decision:** In `DELETE /tasks/{task_id}`, delete all comments where `comment.task_id == task._id` immediately after the task is deleted.
+
+---
+
+## Decision 028: Permanent Historical Audit Trail Preservation
+- **Context:** When tasks or comments are deleted, audit records referencing them could either be deleted, cascade-deleted, or preserved.
+- **Decision:** Historical records in the `activities` collection are preserved permanently to maintain complete auditability and compliance.
+
+---
+
+## Decision 029: Explicit Activity Logging Helper vs Event System
+- **Context:** Activity records need to be generated reliably on state mutations.
+- **Decision:** Use an explicit service helper (`log_activity`) invoked at the end of successful service operations after database write operations succeed. Avoid decorators, event buses, or background hooks to keep the MVP architecture simple, predictable, and maintainable.
+
+---
+
+## Decision 030: Activity Metadata Whitelist & Content Preview Sanitization
+- **Context:** Activity audit logs could accidentally leak sensitive tokens, passwords, or PII.
+- **Decision:** Restrict activity `metadata` to a flat dictionary of max 5 key-value pairs using a strict key whitelist (`old_value`, `new_value`, `title`, `name`, `assigned_to`, `content_preview`). Truncate comment content previews to 100 characters max and strictly prohibit storing credentials, full bodies, or stack traces.

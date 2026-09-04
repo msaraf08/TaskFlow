@@ -145,3 +145,43 @@ pip install bcrypt==4.3.0
   - *Resolution:* Reassign the task to an eligible team member before or during the project transfer.
 - **Cause 3 (Invalid Enums / Empty Title):** `priority` is not in `[low, medium, high, urgent]`, `status` is not in `[todo, in_progress, completed, cancelled]`, or `title` is empty/whitespace.
   - *Resolution:* Provide valid priority, status, and non-empty title strings.
+
+---
+
+## 6. Comment Error Scenarios
+
+### HTTP 400 Bad Request
+- **Cause 1 (Malformed Task or Comment ID):** `task_id` or `comment_id` is not a valid 24-character hexadecimal ObjectId.
+  - *Resolution:* Supply valid 24-hex-character MongoDB ObjectIds.
+
+### HTTP 403 Forbidden
+- **Cause 1 (User Cannot View Task):** User attempted to comment on or list comments for a task they cannot view (e.g. employee not assigned and not on project team; manager not managing team).
+  - *Resolution:* Only users with view access to a task can participate in its discussion.
+- **Cause 2 (Employee Editing/Deleting Another User's Comment):** An employee attempted `PUT /comments/{id}` or `DELETE /comments/{id}` for a comment created by someone else.
+  - *Resolution:* Employees can only edit and delete their own comments.
+- **Cause 3 (Manager Modifying Comment on Other Team's Task):** A manager attempted to edit or delete a comment on a task belonging to a team they do not manage.
+  - *Resolution:* Managers can only moderate comments on tasks belonging to teams they lead.
+
+### HTTP 404 Not Found
+- **Cause 1 (Task Not Found):** Specified `task_id` does not exist in `tasks`.
+  - *Resolution:* Verify task existence before posting or querying comments.
+- **Cause 2 (Comment Not Found):** Specified `comment_id` does not exist in `comments`.
+  - *Resolution:* Verify comment ID before editing or deleting.
+
+### HTTP 422 Unprocessable Entity
+- **Cause 1 (Empty or Oversized Comment):** `content` is empty/whitespace or exceeds 2000 characters.
+  - *Resolution:* Provide non-empty content between 1 and 2000 characters.
+
+---
+
+## 7. Activity Audit Trail Error Scenarios
+
+### HTTP 400 Bad Request
+- **Cause 1 (Malformed Filter ID):** `task_id`, `project_id`, or `team_id` query parameter is not a valid 24-character hexadecimal ObjectId.
+  - *Resolution:* Provide valid 24-hex-character MongoDB ObjectIds in query parameters.
+
+### HTTP 422 Unprocessable Entity
+- **Cause 1 (Invalid Action Filter):** `action` query parameter is not one of the controlled action enums.
+  - *Resolution:* Supply a valid action string (e.g. `task_created`, `task_status_changed`, `comment_created`).
+- **Cause 2 (Invalid Entity Type Filter):** `entity_type` query parameter is not one of `task`, `comment`, `project`, or `team`.
+  - *Resolution:* Supply a valid entity type string.
