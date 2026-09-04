@@ -18,6 +18,9 @@ class Database:
             await self.database["employees"].create_index("email", unique=True)
             await self.database["employees"].create_index("user_id")
             await self.database["teams"].create_index("manager_id")
+            await self.database["projects"].create_index("team_id")
+            await self.database["projects"].create_index("created_by")
+            await self.database["projects"].create_index("status")
             print("✅ MongoDB Indexes Initialized")
 
     async def disconnect(self):

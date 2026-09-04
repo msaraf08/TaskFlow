@@ -79,8 +79,39 @@ Stores team definitions, manager assignments, and member references. The `teams`
 
 ---
 
-### 4. Planned Collections
-- `projects`
+### 4. `projects`
+Stores project records, timeline boundaries, status, team association, and audit metadata. The `projects` collection serves as the single source of truth for project definitions.
+
+```json
+{
+  "_id": "ObjectId",
+  "name": "string (1-120 chars)",
+  "description": "string (optional, max 2000 chars)",
+  "team_id": "string (ForeignKey -> teams._id)",
+  "start_date": "ISODate (datetime)",
+  "end_date": "ISODate (datetime)",
+  "status": "string (planned | active | completed | cancelled)",
+  "created_by": "string (ForeignKey -> users._id)",
+  "created_at": "ISODate (datetime)",
+  "updated_at": "ISODate (datetime)"
+}
+```
+
+**Indexes:**
+- `_id`: Primary Key (Default)
+- `team_id`: Standard Index (`{ "team_id": 1 }`)
+- `created_by`: Standard Index (`{ "created_by": 1 }`)
+- `status`: Standard Index (`{ "status": 1 }`)
+
+**Relationship Rules:**
+- `team_id` references an existing `teams._id`. This is the **only** relationship linking projects and teams.
+- Neither `employees.team_id`, `teams.project_ids`, nor `project.member_ids` are used.
+- `created_by` references `users._id` (JWT `sub`) and is immutable.
+- `start_date` and `end_date` enforce `end_date >= start_date`.
+
+---
+
+### 5. Planned Collections
 - `tasks`
 - `comments`
 - `notifications`

@@ -1,3 +1,4 @@
+from datetime import datetime
 import copy
 from typing import Any, Dict, List, Optional
 from bson import ObjectId
@@ -8,7 +9,8 @@ from app.main import app
 from app.database.dependencies import (
     get_user_collection,
     get_employee_collection,
-    get_team_collection
+    get_team_collection,
+    get_project_collection
 )
 
 
@@ -16,6 +18,14 @@ class InMemoryAsyncCursor:
     def __init__(self, documents: List[Dict[str, Any]]):
         self.documents = copy.deepcopy(documents)
         self.index = 0
+
+    def sort(self, field: str, direction: int = 1):
+        reverse = (direction == -1)
+        self.documents.sort(
+            key=lambda d: d.get(field) if d.get(field) is not None else datetime.min,
+            reverse=reverse
+        )
+        return self
 
     def __aiter__(self):
         return self
@@ -52,6 +62,9 @@ class InMemoryAsyncCollection:
         for k, v in query.items():
             if k == "_id":
                 if doc.get("_id") != v:
+                    return False
+            elif isinstance(v, dict) and "$in" in v:
+                if doc.get(k) not in v["$in"]:
                     return False
             elif isinstance(doc.get(k), list) and not isinstance(v, list):
                 if v not in doc[k]:
@@ -146,10 +159,21 @@ def mock_teams_collection():
 
 
 @pytest.fixture
-async def client(mock_users_collection, mock_employees_collection, mock_teams_collection):
+def mock_projects_collection():
+    return InMemoryAsyncCollection()
+
+
+@pytest.fixture
+async def client(
+    mock_users_collection,
+    mock_employees_collection,
+    mock_teams_collection,
+    mock_projects_collection
+):
     app.dependency_overrides[get_user_collection] = lambda: mock_users_collection
     app.dependency_overrides[get_employee_collection] = lambda: mock_employees_collection
     app.dependency_overrides[get_team_collection] = lambda: mock_teams_collection
+    app.dependency_overrides[get_project_collection] = lambda: mock_projects_collection
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:

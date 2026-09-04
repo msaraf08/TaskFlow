@@ -87,3 +87,33 @@
 ## Decision 015: Direct Hard Deletion of Team Documents in MVP
 - **Context:** When deleting a team in the current stage, soft-deletion vs hard-deletion was considered.
 - **Decision:** In the current phase before task associations are introduced (Phase 4), teams are hard-deleted (`delete_one`). Future phases will introduce cascading checks for attached projects and tasks.
+
+---
+
+## Decision 016: Project to Team Unidirectional Association
+- **Context:** Linking projects to organizational structure could be done via multi-way relations or embedded arrays on teams/employees.
+- **Decision:** Use `team_id` on the `projects` collection as the single normalized link. Avoid redundant `team.project_ids`, `employee.team_id`, or `project.member_ids` to eliminate synchronization overhead.
+
+---
+
+## Decision 017: Immutability of Project Creation Audit Fields
+- **Context:** `created_by` and `created_at` track the creator and origin timestamp of a project.
+- **Decision:** `created_by` is set exclusively from the authenticated user's `user_id` (JWT `sub`) and `created_at` from the server UTC clock. Both fields are immutable, enforced by `extra="forbid"` on `ProjectUpdateSchema`.
+
+---
+
+## Decision 018: Dual-Team Authorization on Project Team Transfer
+- **Context:** When updating a project's `team_id`, a manager might move a project into a team they do not manage or transfer a project away from another manager's team.
+- **Decision:** `PUT /projects/{project_id}` requires that managers possess management authority over BOTH the current project team and the new target team.
+
+---
+
+## Decision 019: Scoped Project Visibility for Managers and Employees
+- **Context:** Project listings and detail endpoints must reflect organizational visibility rules.
+- **Decision:** Managers see projects belonging to teams they manage (`team.manager_id == manager.employee_id`). Employees see projects belonging to teams where they are enrolled in `team.member_ids`. Admins retain full global visibility. Empty listings return `[]` with `200 OK`.
+
+---
+
+## Decision 020: Server-Side Date Range Consistency Validation
+- **Context:** Projects have start and end boundaries (`start_date` and `end_date`).
+- **Decision:** Validate `end_date >= start_date` both at schema ingestion via Pydantic model validators and at service level when partial updates merge existing project dates. Return `422 Unprocessable Entity` on violation.

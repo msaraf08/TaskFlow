@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.4.0 - Phase 3: Project Management
+
+### Added
+- Project creation endpoint (`POST /projects/`) with manager ownership verification and server-generated audit fields (`created_by`, `created_at`, `updated_at`).
+- Project listing endpoint (`GET /projects/`) with role-based visibility (all for Admins, managed teams for Managers, member teams for Employees) and sorting by `created_at` descending.
+- Project detail endpoint (`GET /projects/{project_id}`) with team membership and manager access controls.
+- Project partial update endpoint (`PUT /projects/{project_id}`) with dual-team authorization verification on team transfer.
+- Project hard deletion endpoint (`DELETE /projects/{project_id}`) returning `204 No Content`.
+- Strict date validation (`end_date >= start_date`) and status lifecycle validation (`planned`, `active`, `completed`, `cancelled`).
+- MongoDB indexes for `projects` collection on `team_id`, `created_by`, and `status`.
+- Automated test suite expanded to 25 passing test cases.
+
 ## v0.3.0 - Phase 2: Team Management Completion & Member Assignment
 
 ### Added

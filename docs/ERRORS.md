@@ -77,3 +77,37 @@ pip install bcrypt==4.3.0
 ### HTTP 422 Unprocessable Entity
 - **Cause 1 (Invalid Manager Role):** Assigned `manager_id` belongs to an employee whose role is `employee` instead of `manager` or `admin`.
   - *Resolution:* Promote the employee to `manager` or `admin` prior to assigning as team manager.
+
+---
+
+## 4. Project Management Error Scenarios
+
+### HTTP 400 Bad Request
+- **Cause 1 (Malformed ObjectId in Path or Body):** `project_id` or `team_id` is not a valid 24-character hexadecimal string.
+  - *Resolution:* Provide valid 24-hex-character MongoDB ObjectIds in URL parameters and request bodies.
+
+### HTTP 403 Forbidden
+- **Cause 1 (Manager Managing Unassigned Team Project):** A manager attempted to create, update, or delete a project for a team they do not manage (`team.manager_id != current_user_employee_id`).
+  - *Resolution:* Managers can only manage projects for teams they are assigned to lead.
+- **Cause 2 (Manager Transferring to Unassigned Team):** A manager attempted to change a project's `team_id` to a team they do not manage.
+  - *Resolution:* Team changes require manager ownership over both the current and new target teams.
+- **Cause 3 (Employee Accessing Unassigned Project):** An employee attempted to view details of a project whose `team_id` does not include their `employee_id` in `member_ids`.
+  - *Resolution:* Employees can only view projects for teams they are enrolled in.
+- **Cause 4 (Employee Mutating Project):** An employee attempted `POST /projects/`, `PUT /projects/{id}`, or `DELETE /projects/{id}`.
+  - *Resolution:* Project mutations are restricted to Admins and designated Team Managers.
+
+### HTTP 404 Not Found
+- **Cause 1 (Project Not Found):** Specified `project_id` does not exist in the `projects` collection.
+  - *Resolution:* Verify the project ID.
+- **Cause 2 (Referenced Team Not Found):** Specified `team_id` in project creation or update does not exist in `teams`.
+  - *Resolution:* Ensure the team exists before associating projects with it.
+
+### HTTP 422 Unprocessable Entity
+- **Cause 1 (Invalid Date Range):** `start_date` is later than `end_date`.
+  - *Resolution:* Ensure `end_date` is greater than or equal to `start_date`.
+- **Cause 2 (Invalid Project Status):** `status` is not one of `planned`, `active`, `completed`, or `cancelled`.
+  - *Resolution:* Supply a valid status string.
+- **Cause 3 (Empty / Whitespace Project Name):** `name` is empty or consists solely of whitespace characters.
+  - *Resolution:* Provide a non-empty string between 1 and 120 characters.
+- **Cause 4 (Extra / Immutable Fields in Payload):** Attempted to send unmodeled or immutable fields (e.g. `created_by`, `created_at`).
+  - *Resolution:* Do not pass server-managed audit fields in request payloads.

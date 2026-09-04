@@ -333,3 +333,88 @@ Tokens are validated against cryptographic signatures, expiration time, and acti
   - `400 Bad Request`: Malformed IDs.
   - `403 Forbidden`: Manager does not manage this team.
   - `404 Not Found`: Team does not exist, or employee is not a member of the team.
+
+---
+
+### 5. Project Management (`/projects`)
+
+#### `POST /projects/`
+- **Description:** Creates a new project associated with a team. Validates manager ownership on the target team.
+- **Access:** Admin or Manager of target team (`team.manager_id == manager.employee_id`)
+- **Request Body (`ProjectCreateSchema`):**
+  ```json
+  {
+    "name": "Mobile Redesign",
+    "description": "Flutter app UI overhaul",
+    "team_id": "6a99d4398a5cbc1907f06f9e",
+    "start_date": "2026-09-10",
+    "end_date": "2026-10-15",
+    "status": "planned"
+  }
+  ```
+- **Response `201 Created` (`ProjectResponseSchema`):**
+  ```json
+  {
+    "id": "6a99d4398a5cbc1907f06fa1",
+    "name": "Mobile Redesign",
+    "description": "Flutter app UI overhaul",
+    "team_id": "6a99d4398a5cbc1907f06f9e",
+    "start_date": "2026-09-10",
+    "end_date": "2026-10-15",
+    "status": "planned",
+    "created_by": "6a99d4398a5cbc1907f06f9a",
+    "created_at": "2026-09-04T15:20:00.000Z",
+    "updated_at": "2026-09-04T15:20:00.000Z"
+  }
+  ```
+- **Errors:**
+  - `400 Bad Request`: Malformed `team_id`.
+  - `401 Unauthorized`: Missing or invalid authentication token.
+  - `403 Forbidden`: Inactive user, non-manager role, or manager does not manage the target team.
+  - `404 Not Found`: Target team does not exist.
+  - `422 Unprocessable Entity`: Validation failure (empty name, `start_date > end_date`, invalid status, or extra forbidden fields).
+
+#### `GET /projects/`
+- **Description:** Retrieves projects visible to the authenticated user. Admins see all projects; Managers see projects belonging to teams they manage; Employees see projects belonging to teams where they are enrolled in `member_ids`.
+- **Query Parameters:**
+  - `team_id` (optional): Filter projects by team.
+- **Access:** Authenticated (Admin, Manager, Employee)
+- **Response `200 OK`:** Array of `ProjectResponseSchema` (sorted by `created_at` descending, returns `[]` if none).
+
+#### `GET /projects/{project_id}`
+- **Description:** Retrieves project details by ID. Validates manager ownership or employee team membership.
+- **Access:** Authenticated (Admin, Manager of project's team, or Employee in project's team)
+- **Response `200 OK`:** `ProjectResponseSchema`.
+- **Errors:**
+  - `400 Bad Request`: Malformed `project_id`.
+  - `401 Unauthorized`: Missing or invalid authentication token.
+  - `403 Forbidden`: Inactive user or unauthorized user (manager does not manage team, or employee not a member).
+  - `404 Not Found`: Project or referenced team does not exist.
+
+#### `PUT /projects/{project_id}`
+- **Description:** Performs a partial update on project fields (`name`, `description`, `team_id`, `start_date`, `end_date`, `status`). If `team_id` is updated, the user must be authorized for both the current team and target team.
+- **Access:** Admin or Manager of project's current team (and target team if changed)
+- **Request Body (`ProjectUpdateSchema`):**
+  ```json
+  {
+    "name": "Mobile Redesign V2",
+    "status": "active"
+  }
+  ```
+- **Response `200 OK`:** `ProjectResponseSchema`.
+- **Errors:**
+  - `400 Bad Request`: Malformed `project_id` or `team_id`.
+  - `401 Unauthorized`: Missing or invalid authentication token.
+  - `403 Forbidden`: Inactive user or unauthorized manager for current or new target team.
+  - `404 Not Found`: Project or new target team does not exist.
+  - `422 Unprocessable Entity`: Validation failure (empty name, `start_date > end_date`, invalid status, or extra forbidden fields).
+
+#### `DELETE /projects/{project_id}`
+- **Description:** Permanently removes a project document from MongoDB.
+- **Access:** Admin or Manager of project's team (`team.manager_id == manager.employee_id`)
+- **Response `204 No Content`**
+- **Errors:**
+  - `400 Bad Request`: Malformed `project_id`.
+  - `401 Unauthorized`: Missing or invalid authentication token.
+  - `403 Forbidden`: Inactive user or manager does not manage the project's team.
+  - `404 Not Found`: Project does not exist.

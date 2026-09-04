@@ -1,6 +1,6 @@
 # TaskFlow - Project Audit
 
-**Document Version:** 1.3.0  
+**Document Version:** 1.4.0  
 **Audit Date:** September 2026  
 **Repository:** TaskFlow  
 **Audit Scope:** Full Codebase, Configuration, Infrastructure, Documentation, Security, and Architecture  
@@ -11,7 +11,7 @@
 
 TaskFlow is designed as a collaborative, multi-tenant/organization team task management system. The intended application enables businesses to organize their workforce across departments and teams, manage projects and task lifecycles, assign responsibilities, track progress, maintain audit trails through comments, and manage employee lifecycles with role-based access control (Admin, Manager, Employee).
 
-The repository contains a stabilized FastAPI backend application with support for secure authentication, user profile and password management, employee lifecycle management, team management with member assignment and ownership-based RBAC, automated pytest test suite (21 passing tests), Docker Compose definitions for local database services, and technical documentation. The mobile/web frontend directory exists but contains no code.
+The repository contains a stabilized FastAPI backend application with support for secure authentication, user profile and password management, employee lifecycle management, team management with member assignment, project management with team association and scoped visibility RBAC, automated pytest test suite (25 passing tests), Docker Compose definitions for local database services, and technical documentation. The mobile/web frontend directory exists but contains no code.
 
 ---
 
@@ -247,13 +247,18 @@ volumes:
 | `DELETE` | `/teams/{team_id}` | Hard delete team | Required (Bearer) | Role: `admin`, or Manager of own team | ✅ IMPLEMENTED |
 | `POST` | `/teams/{team_id}/members` | Add employee to team member roster | Required (Bearer) | Role: `admin`, or Manager of own team | ✅ IMPLEMENTED |
 | `DELETE` | `/teams/{team_id}/members/{employee_id}` | Remove employee from team member roster | Required (Bearer) | Role: `admin`, or Manager of own team | ✅ IMPLEMENTED |
+| `POST` | `/projects/` | Create a new project | Required (Bearer) | Role: `admin`, or Manager of target team | ✅ IMPLEMENTED |
+| `GET` | `/projects/` | List projects (all for admin, managed for manager, member for employee) | Required (Bearer) | Any active role | ✅ IMPLEMENTED |
+| `GET` | `/projects/{project_id}` | Retrieve project by ID (scoped by manager ownership / member team) | Required (Bearer) | Any active role | ✅ IMPLEMENTED |
+| `PUT` | `/projects/{project_id}` | Partial update project (dual-team check on team transfer) | Required (Bearer) | Role: `admin`, or Manager of current & new team | ✅ IMPLEMENTED |
+| `DELETE` | `/projects/{project_id}` | Hard delete project | Required (Bearer) | Role: `admin`, or Manager of project's team | ✅ IMPLEMENTED |
 
 ---
 
 ## 11. API Design Review
 
-- **Status Codes:** Standardized (HTTP `200 OK` for reads/updates/member addition, `201 Created` for creations, `204 No Content` for team/member deletion, `400 Bad Request` for malformed IDs or manager in member list, `401` for unauthenticated/deleted users, `403` for inactive users or unauthorized management/access, `404 Not Found` for missing resources, `409 Conflict` for duplicate members, `422` for schema/role validation failures).
-- **Response Models:** All routes decorated with Pydantic response models (`UserRegisterResponseSchema`, `TokenResponseSchema`, `UserResponseSchema`, `PasswordChangeResponseSchema`, `EmployeeResponseSchema`, `EmployeeCreateResponseSchema`, `TeamResponseSchema`). Sensitive fields (e.g., password hashes) are omitted from API schemas.
+- **Status Codes:** Standardized (HTTP `200 OK` for reads/updates/member addition, `201 Created` for creations, `204 No Content` for deletions, `400 Bad Request` for malformed IDs or manager in member list, `401` for unauthenticated/deleted users, `403` for inactive users or unauthorized management/access, `404 Not Found` for missing resources, `409 Conflict` for duplicate members, `422` for schema/role/date validation failures).
+- **Response Models:** All routes decorated with Pydantic response models (`UserRegisterResponseSchema`, `TokenResponseSchema`, `UserResponseSchema`, `PasswordChangeResponseSchema`, `EmployeeResponseSchema`, `EmployeeCreateResponseSchema`, `TeamResponseSchema`, `ProjectResponseSchema`). Sensitive fields (e.g., password hashes) are omitted from API schemas.
 - **ObjectId Validation:** Centralized `validate_object_id` utility prevents unhandled 500 server errors on invalid ID strings.
 
 ---
@@ -264,17 +269,17 @@ volumes:
 |---|---|---|
 | Project setup | ✅ IMPLEMENTED | Python 3.13 venv, directory layout, gitignore configured. |
 | Configuration | ✅ IMPLEMENTED | Pydantic BaseSettings loading from `.env` and `.env.example`. |
-| MongoDB | ✅ IMPLEMENTED | Motor async client with startup index initialization. |
+| MongoDB | ✅ IMPLEMENTED | Motor async client with startup index initialization (`users`, `employees`, `teams`, `projects`). |
 | Redis | 🟡 PARTIALLY IMPLEMENTED | Connected on startup; caching features planned for Phase 6. |
 | Docker | 🟡 PARTIALLY IMPLEMENTED | `compose.yaml` runs MongoDB & Redis; backend Dockerfile planned for Phase 8. |
 | Authentication | ✅ IMPLEMENTED | Registration, login, profile (`/auth/me`), password change (`/auth/password`), bcrypt hashing, JWT issuance and validation. |
-| Authorization | ✅ IMPLEMENTED | Role checks (`admin`, `manager`, `employee`), active account enforcement, and team-ownership verification. |
+| Authorization | ✅ IMPLEMENTED | Role checks (`admin`, `manager`, `employee`), active account enforcement, team ownership, and scoped project visibility. |
 | User management | ✅ IMPLEMENTED | Secured registration, bootstrap admin, user profile, password change, user status sync. |
 | Employee management | ✅ IMPLEMENTED | Full CRUD with response models and random password generation. |
 | Employee deactivation | ✅ IMPLEMENTED | Soft-deactivation with synchronized user account revocation. |
 | Team management | ✅ IMPLEMENTED | Full CRUD with partial updates, ownership authorization, and single-source-of-truth membership. |
 | Team member assignment | ✅ IMPLEMENTED | Atomic `$addToSet` member additions, `$pull` removals, duplicate conflict detection (409), and manager exclusion. |
-| Project management | ❌ NOT IMPLEMENTED | Planned for Phase 3. |
+| Project management | ✅ IMPLEMENTED | Full CRUD with team association, date validation, manager dual-team authorization, and member visibility. |
 | Task management | ❌ NOT IMPLEMENTED | Planned for Phase 4. |
 | Task assignment | ❌ NOT IMPLEMENTED | Planned for Phase 4. |
 | Task status management | ❌ NOT IMPLEMENTED | Planned for Phase 4. |
@@ -284,33 +289,33 @@ volumes:
 | Notifications | ❌ NOT IMPLEMENTED | Planned for Phase 6. |
 | Flutter frontend | ❌ NOT IMPLEMENTED | Planned for Phase 7. |
 | API integration | ❌ NOT IMPLEMENTED | Planned for Phase 7. |
-| Testing | ✅ IMPLEMENTED | 21 automated unit and integration tests passing via pytest. |
-| Documentation | ✅ IMPLEMENTED | `API.md`, `DATABASE.md`, `SETUP.md`, `DECISIONS.md`, `ERRORS.md`, and `AUDIT.md` fully updated. |
+| Testing | ✅ IMPLEMENTED | 25 automated unit and integration tests passing via pytest. |
+| Documentation | ✅ IMPLEMENTED | `API.md`, `DATABASE.md`, `SETUP.md`, `DECISIONS.md`, `ERRORS.md`, `CHANGELOG.md`, and `AUDIT.md` fully updated. |
 
 ---
 
 ## 13. Current Issues and Technical Debt
 
-### 13.1 Phase 0 & Phase 1 Resolved Issues
+### 13.1 Phase 0, 1, 2 & 3 Resolved Issues
 
 1. ✅ **Privilege Escalation via Self-Registration:** Fixed in `app/schemas/user_schema.py` & `app/routes/auth.py`.
 2. ✅ **Hardcoded Initial Password:** Fixed in `app/core/security.py` & `app/routes/employees.py`.
 3. ✅ **Unhandled ObjectId Exceptions:** Fixed with `app/utils/object_id.py` across all endpoints and services.
 4. ✅ **Deactivated Employee Auth Bypass:** Fixed in `app/core/dependencies.py` & `app/routes/employees.py`.
-5. ✅ **Missing Database Indexes:** Fixed with `db.init_indexes()` in `app/database/mongodb.py`.
-6. ✅ **Date Update Inconsistency:** Fixed in `app/services/employee_service.py`.
+5. ✅ **Missing Database Indexes:** Fixed with `db.init_indexes()` in `app/database/mongodb.py` (`users`, `employees`, `teams`, `projects`).
+6. ✅ **Date Update Inconsistency:** Fixed in `app/services/employee_service.py` & `app/services/project_service.py`.
 7. ✅ **Deprecated Lifecycle Handlers:** Migrated to async lifespan handler in `app/main.py`.
 8. ✅ **Missing Response Models:** Added explicit response schemas across all endpoints.
 9. ✅ **Missing User Profile & Password Change:** Implemented `GET /auth/me` and `PUT /auth/password`.
 10. ✅ **Strict Input Validation & Sanitization:** Enforced `extra="forbid"`, min length 8 on passwords, trimmed non-password strings, preserved exact password whitespace.
-11. ✅ **Missing Automated Tests:** Added pytest suite in `tests/` with 17 passing tests.
+11. ✅ **Missing Automated Tests:** Added pytest suite in `tests/` with 25 passing tests.
 
 ---
 
 ## 14. Testing Status
 
 - **Framework:** Pytest 9.1.1 with pytest-asyncio and httpx.
-- **Suite Results:** 21 passed in ~6.5s.
+- **Suite Results:** 25 passed in ~16.9s.
 - **Coverage Highlights:**
   - Role security during public registration & first user bootstrap.
   - Login authentication, token issuance, and password validation.
@@ -326,6 +331,10 @@ volumes:
   - Team update (partial fields) and deletion with manager ownership authorization.
   - Team member assignment with `$addToSet`, duplicate member detection (`409 Conflict`), manager-as-member prevention (`400 Bad Request`), and member removal with `$pull`.
   - Employee visibility filtering: employees can only view teams where they are enrolled in `member_ids`.
+  - Project CRUD with default `planned` status, explicit status (`active`, `completed`, `cancelled`), and date range validation (`end_date >= start_date`).
+  - Project manager authorization restricting project creation/mutation to managed teams, and enforcing dual-team authorization on project team reassignment.
+  - Project employee visibility scoping ensuring employees can only list/get projects for teams they are enrolled in as members.
+  - Server-managed audit fields (`created_by` from JWT `sub`, `created_at`, `updated_at`) with immutable field enforcement via `extra="forbid"`.
 
 ---
 
@@ -334,7 +343,7 @@ volumes:
 - **Phase 0:** ✅ Security & Backend Stabilization *(Completed)*
 - **Phase 1:** ✅ Authentication, Authorization & User Profile Management *(Completed)*
 - **Phase 2:** ✅ Team Management Completion & Member Assignment *(Completed)*
-- **Phase 3:** Project Management
+- **Phase 3:** ✅ Project Management *(Completed)*
 - **Phase 4:** Task Management & Workflows
 - **Phase 5:** Comments & Activity Audit Trail
 - **Phase 6:** Redis Caching & Rate Limiting
@@ -345,4 +354,4 @@ volumes:
 
 ## 16. Audit Summary
 
-Phase 2 has delivered complete team management lifecycle and member assignment capabilities. Teams maintain strict separation between managers (`manager_id`) and members (`member_ids`), with the `teams` collection functioning as the sole source of truth without redundant fields on employee documents. Dynamic ownership checks ensure managers can only mutate their own teams while administrators retain full governance. Role-based visibility restricts employees to viewing only their enrolled teams. All behaviors are validated with 21 automated tests and comprehensive documentation.
+Phase 3 has successfully introduced comprehensive Project Management. Projects maintain a single, normalized reference to teams (`team_id`) without redundant relational structures on teams or employees. Dynamic manager ownership resolution ensures managers are strictly confined to projects on teams they lead (and enforces dual-team authorization during team transfers), while regular employees are scoped to viewing projects only for teams where they hold active membership. All behaviors are protected by Pydantic response models, input sanitization, and verified by 25 automated tests.
