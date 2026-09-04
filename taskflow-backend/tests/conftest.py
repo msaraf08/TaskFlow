@@ -39,6 +39,11 @@ class UpdateResult:
         self.modified_count = modified_count
 
 
+class DeleteResult:
+    def __init__(self, deleted_count: int):
+        self.deleted_count = deleted_count
+
+
 class InMemoryAsyncCollection:
     def __init__(self):
         self.docs: List[Dict[str, Any]] = []
@@ -47,6 +52,9 @@ class InMemoryAsyncCollection:
         for k, v in query.items():
             if k == "_id":
                 if doc.get("_id") != v:
+                    return False
+            elif isinstance(doc.get(k), list) and not isinstance(v, list):
+                if v not in doc[k]:
                     return False
             elif doc.get(k) != v:
                 return False
@@ -88,14 +96,32 @@ class InMemoryAsyncCollection:
         matched = 0
         modified = 0
         set_fields = update.get("$set", {})
+        add_fields = update.get("$addToSet", {})
+        pull_fields = update.get("$pull", {})
+
         for d in self.docs:
             if self._matches(d, query):
                 matched += 1
                 for k, v in set_fields.items():
                     d[k] = copy.deepcopy(v)
+                for k, v in add_fields.items():
+                    if k not in d or not isinstance(d[k], list):
+                        d[k] = []
+                    if v not in d[k]:
+                        d[k].append(copy.deepcopy(v))
+                for k, v in pull_fields.items():
+                    if k in d and isinstance(d[k], list):
+                        d[k] = [item for item in d[k] if item != v]
                 modified += 1
                 break
         return UpdateResult(matched, modified)
+
+    async def delete_one(self, query: Dict[str, Any]) -> DeleteResult:
+        for i, d in enumerate(self.docs):
+            if self._matches(d, query):
+                del self.docs[i]
+                return DeleteResult(1)
+        return DeleteResult(0)
 
     async def count_documents(self, query: Dict[str, Any]) -> int:
         return sum(1 for d in self.docs if self._matches(d, query))
