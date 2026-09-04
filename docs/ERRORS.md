@@ -43,3 +43,37 @@ pip install bcrypt==4.3.0
   - *Resolution:* Ensure valid ObjectId strings are used in path parameters.
 - **Cause 2 (Duplicate Email Registration):** Attempted registration with an email that is already in use.
   - *Resolution:* Use a unique email address or proceed to login.
+
+---
+
+## 3. Team Management Error Scenarios
+
+### HTTP 400 Bad Request
+- **Cause 1 (Malformed ObjectId in Path or Body):** `team_id`, `manager_id`, or `employee_id` is not a valid 24-character hexadecimal string.
+  - *Resolution:* Provide valid 24-hex-character MongoDB ObjectIds.
+- **Cause 2 (Manager Assigned as Member):** Attempted to add the team manager into the team's `member_ids` list.
+  - *Resolution:* Managers cannot be added to `member_ids` for their own team; team managers are tracked via `manager_id`.
+
+### HTTP 403 Forbidden
+- **Cause 1 (Manager Modifying Another Manager's Team):** A manager attempted to update, delete, or modify membership on a team where `team.manager_id != current_user_employee_id`.
+  - *Resolution:* Managers can only manage their own assigned teams. Contact an admin to update team ownership.
+- **Cause 2 (Employee Viewing Unassigned Team):** An employee attempted to view details of a team they do not belong to.
+  - *Resolution:* Employees can only view teams where their `employee_id` is listed in `member_ids`.
+- **Cause 3 (Inactive Member or Manager):** Attempted to assign an inactive employee as manager or member.
+  - *Resolution:* Reactivate the employee profile before assigning to a team.
+
+### HTTP 404 Not Found
+- **Cause 1 (Team Not Found):** Specified `team_id` does not exist in the `teams` collection.
+  - *Resolution:* Verify the team ID.
+- **Cause 2 (Manager or Member Employee Not Found):** Specified `manager_id` or `employee_id` does not exist in the `employees` collection.
+  - *Resolution:* Verify that the employee profile exists before assigning to a team.
+- **Cause 3 (Member Not in Team on Removal):** `DELETE /teams/{team_id}/members/{employee_id}` called for an employee not currently in `member_ids`.
+  - *Resolution:* Verify that the employee is currently enrolled in the team.
+
+### HTTP 409 Conflict
+- **Cause 1 (Duplicate Team Member):** Attempted to add an employee who is already in `member_ids`.
+  - *Resolution:* No action needed; the employee is already assigned to the team.
+
+### HTTP 422 Unprocessable Entity
+- **Cause 1 (Invalid Manager Role):** Assigned `manager_id` belongs to an employee whose role is `employee` instead of `manager` or `admin`.
+  - *Resolution:* Promote the employee to `manager` or `admin` prior to assigning as team manager.

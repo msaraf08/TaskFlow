@@ -18,7 +18,7 @@ Tokens are validated against cryptographic signatures, expiration time, and acti
 
 - If a token is invalid, expired, or the user account no longer exists, the API returns `401 Unauthorized`.
 - If the token is valid but the account is marked `status: "inactive"`, the API returns `403 Forbidden`.
-- If an authenticated user attempts an operation restricted to a higher role, the API returns `403 Forbidden`.
+- If an authenticated user attempts an operation restricted to a higher role or unauthorized resource (e.g. modifying another manager's team), the API returns `403 Forbidden`.
 
 ---
 
@@ -242,7 +242,7 @@ Tokens are validated against cryptographic signatures, expiration time, and acti
 ### 4. Team Management (`/teams`)
 
 #### `POST /teams/`
-- **Description:** Creates a new team.
+- **Description:** Creates a new team with an empty member roster. Validates manager role and active status if assigned.
 - **Access:** Admin or Manager (`role: admin, manager`)
 - **Request Body (`TeamCreateSchema`):**
   ```json
@@ -252,7 +252,7 @@ Tokens are validated against cryptographic signatures, expiration time, and acti
     "manager_id": "6a99d4398a5cbc1907f06f9a"
   }
   ```
-- **Response `201 Created`:**
+- **Response `201 Created` (`TeamResponseSchema`):**
   ```json
   {
     "id": "6a99d4398a5cbc1907f06f9e",
@@ -262,16 +262,74 @@ Tokens are validated against cryptographic signatures, expiration time, and acti
     "member_ids": []
   }
   ```
+- **Errors:**
+  - `400 Bad Request`: Malformed `manager_id`.
+  - `403 Forbidden`: Manager account is inactive.
+  - `404 Not Found`: Manager employee does not exist.
+  - `422 Unprocessable Entity`: Assigned manager does not hold a manager or admin role.
 
 #### `GET /teams/`
-- **Description:** Retrieves list of all teams.
-- **Access:** Admin or Manager (`role: admin, manager`)
+- **Description:** Retrieves all teams for Admins and Managers; retrieves only teams where the authenticated employee is a member for Employees.
+- **Access:** Authenticated (Admin, Manager, Employee)
 - **Response `200 OK`:** Array of `TeamResponseSchema`.
 
 #### `GET /teams/{team_id}`
-- **Description:** Retrieves team details by ID.
-- **Access:** Admin or Manager (`role: admin, manager`)
+- **Description:** Retrieves team details by ID. Admins and Managers can view any team; Employees can view only if they are in `member_ids`.
+- **Access:** Authenticated (Admin, Manager, or assigned Employee member)
 - **Response `200 OK`:** `TeamResponseSchema`.
 - **Errors:**
-  - `400 Bad Request`: Malformed ObjectId.
+  - `400 Bad Request`: Malformed `team_id`.
+  - `403 Forbidden`: Employee is not a member of the team.
   - `404 Not Found`: Team does not exist.
+
+#### `PUT /teams/{team_id}`
+- **Description:** Performs a partial update on team fields (`name`, `description`, `manager_id`). `member_ids` cannot be altered through this endpoint.
+- **Access:** Admin or Manager of own team (`team.manager_id == manager.employee_id`)
+- **Request Body (`TeamUpdateSchema`):**
+  ```json
+  {
+    "name": "Platform & Backend Guild",
+    "description": "Updated team scope",
+    "manager_id": "6a99d4398a5cbc1907f06f9b"
+  }
+  ```
+- **Response `200 OK`:** `TeamResponseSchema`.
+- **Errors:**
+  - `400 Bad Request`: Malformed `team_id` or `manager_id`.
+  - `403 Forbidden`: Manager does not manage this team, or manager account is inactive.
+  - `404 Not Found`: Team or manager does not exist.
+  - `422 Unprocessable Entity`: Assigned manager is not a manager or admin, or validation failure.
+
+#### `DELETE /teams/{team_id}`
+- **Description:** Hard deletes a team document from MongoDB.
+- **Access:** Admin or Manager of own team (`team.manager_id == manager.employee_id`)
+- **Response `204 No Content`**
+- **Errors:**
+  - `400 Bad Request`: Malformed `team_id`.
+  - `403 Forbidden`: Manager does not manage this team.
+  - `404 Not Found`: Team does not exist.
+
+#### `POST /teams/{team_id}/members`
+- **Description:** Assigns an active employee to the team member roster using `$addToSet`. Managers cannot be added to `member_ids`.
+- **Access:** Admin or Manager of own team (`team.manager_id == manager.employee_id`)
+- **Request Body (`TeamMemberAssignSchema`):**
+  ```json
+  {
+    "employee_id": "6a99d4398a5cbc1907f06f9c"
+  }
+  ```
+- **Response `200 OK`:** `TeamResponseSchema`.
+- **Errors:**
+  - `400 Bad Request`: Malformed IDs or attempting to add the team manager as a member.
+  - `403 Forbidden`: Manager does not manage this team, or employee is inactive.
+  - `404 Not Found`: Team or employee does not exist.
+  - `409 Conflict`: Employee is already a member of this team.
+
+#### `DELETE /teams/{team_id}/members/{employee_id}`
+- **Description:** Removes an employee from the team member roster using `$pull`.
+- **Access:** Admin or Manager of own team (`team.manager_id == manager.employee_id`)
+- **Response `204 No Content`**
+- **Errors:**
+  - `400 Bad Request`: Malformed IDs.
+  - `403 Forbidden`: Manager does not manage this team.
+  - `404 Not Found`: Team does not exist, or employee is not a member of the team.

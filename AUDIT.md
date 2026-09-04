@@ -1,6 +1,6 @@
 # TaskFlow - Project Audit
 
-**Document Version:** 1.2.0  
+**Document Version:** 1.3.0  
 **Audit Date:** September 2026  
 **Repository:** TaskFlow  
 **Audit Scope:** Full Codebase, Configuration, Infrastructure, Documentation, Security, and Architecture  
@@ -11,7 +11,7 @@
 
 TaskFlow is designed as a collaborative, multi-tenant/organization team task management system. The intended application enables businesses to organize their workforce across departments and teams, manage projects and task lifecycles, assign responsibilities, track progress, maintain audit trails through comments, and manage employee lifecycles with role-based access control (Admin, Manager, Employee).
 
-The repository contains a stabilized FastAPI backend application with support for secure authentication, user profile and password management, employee lifecycle management, team management, automated pytest test suite (17 passing tests), Docker Compose definitions for local database services, and technical documentation. The mobile/web frontend directory exists but contains no code.
+The repository contains a stabilized FastAPI backend application with support for secure authentication, user profile and password management, employee lifecycle management, team management with member assignment and ownership-based RBAC, automated pytest test suite (21 passing tests), Docker Compose definitions for local database services, and technical documentation. The mobile/web frontend directory exists but contains no code.
 
 ---
 
@@ -241,14 +241,18 @@ volumes:
 | `PUT` | `/employees/{employee_id}` | Update employee profile details | Required (Bearer) | Role: `admin` | ✅ IMPLEMENTED |
 | `PATCH` | `/employees/{employee_id}/deactivate` | Deactivate employee & user | Required (Bearer) | Role: `admin` | ✅ IMPLEMENTED |
 | `POST` | `/teams/` | Create a new team | Required (Bearer) | Role: `admin`, `manager` | ✅ IMPLEMENTED |
-| `GET` | `/teams/` | List all teams | Required (Bearer) | Role: `admin`, `manager` | ✅ IMPLEMENTED |
-| `GET` | `/teams/{team_id}` | Retrieve team by ID | Required (Bearer) | Role: `admin`, `manager` | ✅ IMPLEMENTED |
+| `GET` | `/teams/` | List teams (all for admin/manager, member-only for employee) | Required (Bearer) | Any active role | ✅ IMPLEMENTED |
+| `GET` | `/teams/{team_id}` | Retrieve team by ID (member-only check for employee) | Required (Bearer) | Any active role | ✅ IMPLEMENTED |
+| `PUT` | `/teams/{team_id}` | Partial update team details | Required (Bearer) | Role: `admin`, or Manager of own team | ✅ IMPLEMENTED |
+| `DELETE` | `/teams/{team_id}` | Hard delete team | Required (Bearer) | Role: `admin`, or Manager of own team | ✅ IMPLEMENTED |
+| `POST` | `/teams/{team_id}/members` | Add employee to team member roster | Required (Bearer) | Role: `admin`, or Manager of own team | ✅ IMPLEMENTED |
+| `DELETE` | `/teams/{team_id}/members/{employee_id}` | Remove employee from team member roster | Required (Bearer) | Role: `admin`, or Manager of own team | ✅ IMPLEMENTED |
 
 ---
 
 ## 11. API Design Review
 
-- **Status Codes:** Standardized (HTTP `200 OK` for profile/password updates/reads, `201 Created` for POST creation routes, `400 Bad Request` for malformed IDs, `401` for unauthenticated/deleted users/wrong password, `403` for inactive users/insufficient permissions, `422` for schema validation failures).
+- **Status Codes:** Standardized (HTTP `200 OK` for reads/updates/member addition, `201 Created` for creations, `204 No Content` for team/member deletion, `400 Bad Request` for malformed IDs or manager in member list, `401` for unauthenticated/deleted users, `403` for inactive users or unauthorized management/access, `404 Not Found` for missing resources, `409 Conflict` for duplicate members, `422` for schema/role validation failures).
 - **Response Models:** All routes decorated with Pydantic response models (`UserRegisterResponseSchema`, `TokenResponseSchema`, `UserResponseSchema`, `PasswordChangeResponseSchema`, `EmployeeResponseSchema`, `EmployeeCreateResponseSchema`, `TeamResponseSchema`). Sensitive fields (e.g., password hashes) are omitted from API schemas.
 - **ObjectId Validation:** Centralized `validate_object_id` utility prevents unhandled 500 server errors on invalid ID strings.
 
@@ -264,12 +268,12 @@ volumes:
 | Redis | 🟡 PARTIALLY IMPLEMENTED | Connected on startup; caching features planned for Phase 6. |
 | Docker | 🟡 PARTIALLY IMPLEMENTED | `compose.yaml` runs MongoDB & Redis; backend Dockerfile planned for Phase 8. |
 | Authentication | ✅ IMPLEMENTED | Registration, login, profile (`/auth/me`), password change (`/auth/password`), bcrypt hashing, JWT issuance and validation. |
-| Authorization | ✅ IMPLEMENTED | Role checks (`admin`, `manager`, `employee`) and active account enforcement. |
+| Authorization | ✅ IMPLEMENTED | Role checks (`admin`, `manager`, `employee`), active account enforcement, and team-ownership verification. |
 | User management | ✅ IMPLEMENTED | Secured registration, bootstrap admin, user profile, password change, user status sync. |
 | Employee management | ✅ IMPLEMENTED | Full CRUD with response models and random password generation. |
 | Employee deactivation | ✅ IMPLEMENTED | Soft-deactivation with synchronized user account revocation. |
-| Team management | 🟡 PARTIALLY IMPLEMENTED | Create, list, and get team endpoints exist; team member assignment planned. |
-| Team member assignment | ❌ NOT IMPLEMENTED | Planned for Phase 2. |
+| Team management | ✅ IMPLEMENTED | Full CRUD with partial updates, ownership authorization, and single-source-of-truth membership. |
+| Team member assignment | ✅ IMPLEMENTED | Atomic `$addToSet` member additions, `$pull` removals, duplicate conflict detection (409), and manager exclusion. |
 | Project management | ❌ NOT IMPLEMENTED | Planned for Phase 3. |
 | Task management | ❌ NOT IMPLEMENTED | Planned for Phase 4. |
 | Task assignment | ❌ NOT IMPLEMENTED | Planned for Phase 4. |
@@ -280,7 +284,7 @@ volumes:
 | Notifications | ❌ NOT IMPLEMENTED | Planned for Phase 6. |
 | Flutter frontend | ❌ NOT IMPLEMENTED | Planned for Phase 7. |
 | API integration | ❌ NOT IMPLEMENTED | Planned for Phase 7. |
-| Testing | ✅ IMPLEMENTED | 17 automated unit and integration tests passing via pytest. |
+| Testing | ✅ IMPLEMENTED | 21 automated unit and integration tests passing via pytest. |
 | Documentation | ✅ IMPLEMENTED | `API.md`, `DATABASE.md`, `SETUP.md`, `DECISIONS.md`, `ERRORS.md`, and `AUDIT.md` fully updated. |
 
 ---
@@ -306,7 +310,7 @@ volumes:
 ## 14. Testing Status
 
 - **Framework:** Pytest 9.1.1 with pytest-asyncio and httpx.
-- **Suite Results:** 17 passed in ~6.1s.
+- **Suite Results:** 21 passed in ~6.5s.
 - **Coverage Highlights:**
   - Role security during public registration & first user bootstrap.
   - Login authentication, token issuance, and password validation.
@@ -319,6 +323,9 @@ volumes:
   - Employee `joining_date` BSON date normalization.
   - Employee deactivation revoking authentication.
   - Team creation, listing, retrieval, and RBAC permission checks.
+  - Team update (partial fields) and deletion with manager ownership authorization.
+  - Team member assignment with `$addToSet`, duplicate member detection (`409 Conflict`), manager-as-member prevention (`400 Bad Request`), and member removal with `$pull`.
+  - Employee visibility filtering: employees can only view teams where they are enrolled in `member_ids`.
 
 ---
 
@@ -326,7 +333,7 @@ volumes:
 
 - **Phase 0:** ✅ Security & Backend Stabilization *(Completed)*
 - **Phase 1:** ✅ Authentication, Authorization & User Profile Management *(Completed)*
-- **Phase 2:** Team Management Completion & Member Assignment
+- **Phase 2:** ✅ Team Management Completion & Member Assignment *(Completed)*
 - **Phase 3:** Project Management
 - **Phase 4:** Task Management & Workflows
 - **Phase 5:** Comments & Activity Audit Trail
@@ -338,4 +345,4 @@ volumes:
 
 ## 16. Audit Summary
 
-Phase 1 has established robust identity, authorization, and profile management for TaskFlow. Users can retrieve their active profile (`GET /auth/me`) and securely update their password (`PUT /auth/password`) with atomic updates and verification. Deactivated and deleted accounts are properly handled with distinct 403 and 401 statuses, while exact password whitespace is preserved and all endpoints are protected by Pydantic response models and verified by 17 automated tests.
+Phase 2 has delivered complete team management lifecycle and member assignment capabilities. Teams maintain strict separation between managers (`manager_id`) and members (`member_ids`), with the `teams` collection functioning as the sole source of truth without redundant fields on employee documents. Dynamic ownership checks ensure managers can only mutate their own teams while administrators retain full governance. Role-based visibility restricts employees to viewing only their enrolled teams. All behaviors are validated with 21 automated tests and comprehensive documentation.

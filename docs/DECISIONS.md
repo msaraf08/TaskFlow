@@ -57,3 +57,33 @@
 ## Decision 010: Deferral of Refresh Token Infrastructure
 - **Context:** Access token lifetime is configured to 30 minutes, providing a practical balance between security and user experience for the MVP.
 - **Decision:** Refresh tokens are deferred to maintain a simple, robust authentication architecture without premature complexity.
+
+---
+
+## Decision 011: Teams Collection as Single Source of Truth for Team Membership
+- **Context:** Team membership can be modeled either symmetrically (storing `team_id` on employee documents and `member_ids` on team documents) or unidirectionally.
+- **Decision:** Use the `teams.member_ids` array as the single source of truth. The `employees` collection does not store a redundant `team_id`, preventing dual-write synchronization issues and race conditions.
+
+---
+
+## Decision 012: Strict Separation of Manager and Member Relationships
+- **Context:** A team has a `manager_id` and a list of `member_ids`. If a manager is also included in `member_ids`, ownership checks and member roster mutations become ambiguous.
+- **Decision:** `manager_id` and `member_ids` are kept distinct. Attempting to add the team manager to `member_ids` returns `400 Bad Request`.
+
+---
+
+## Decision 013: Dynamic Manager Ownership Resolution Without Redundant JWT Claims
+- **Context:** Team authorization requires verifying if the requester is the manager of a team. Storing `employee_id` in JWT claims would create stale tokens when employee IDs change or when managers are re-assigned.
+- **Decision:** Retain only `user_id` and `role` in the JWT token. Resolve `user_id -> employees._id` dynamically from MongoDB within `check_team_management_permission` to guarantee up-to-date ownership validation.
+
+---
+
+## Decision 014: Atomic Member Roster Management and Duplicate Conflict Handling
+- **Context:** Adding an already assigned employee or an inactive employee must be handled cleanly.
+- **Decision:** `POST /teams/{team_id}/members` validates that the employee exists and has `status == "active"`. If the employee is already present in `member_ids`, return `409 Conflict`. Use MongoDB `$addToSet` for atomic addition and `$pull` for atomic removal.
+
+---
+
+## Decision 015: Direct Hard Deletion of Team Documents in MVP
+- **Context:** When deleting a team in the current stage, soft-deletion vs hard-deletion was considered.
+- **Decision:** In the current phase before task associations are introduced (Phase 4), teams are hard-deleted (`delete_one`). Future phases will introduce cascading checks for attached projects and tasks.

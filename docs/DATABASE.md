@@ -55,14 +55,14 @@ Stores employee profiles and organizational data.
 ---
 
 ### 3. `teams`
-Stores team definitions, manager assignments, and member references.
+Stores team definitions, manager assignments, and member references. The `teams` collection serves as the single source of truth for team membership.
 
 ```json
 {
   "_id": "ObjectId",
   "name": "string",
   "description": "string (optional)",
-  "manager_id": "string (ForeignKey -> users._id, optional)",
+  "manager_id": "string (ForeignKey -> employees._id, optional)",
   "member_ids": ["string (ForeignKey -> employees._id)"]
 }
 ```
@@ -70,6 +70,12 @@ Stores team definitions, manager assignments, and member references.
 **Indexes:**
 - `_id`: Primary Key (Default)
 - `manager_id`: Standard Index (`{ "manager_id": 1 }`)
+
+**Relationship Rules:**
+- `manager_id` references an active `employees._id` with role `manager` or `admin`.
+- `member_ids` contains an array of active `employees._id` references.
+- `manager_id` and `member_ids` are kept strictly separated; a manager is not listed in `member_ids`.
+- `employees` collection does not store a redundant `team_id`, eliminating dual-write synchronization risks.
 
 ---
 
