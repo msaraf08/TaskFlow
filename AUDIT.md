@@ -1,6 +1,6 @@
 # TaskFlow - Project Audit
 
-**Document Version:** 1.1.0  
+**Document Version:** 1.2.0  
 **Audit Date:** September 2026  
 **Repository:** TaskFlow  
 **Audit Scope:** Full Codebase, Configuration, Infrastructure, Documentation, Security, and Architecture  
@@ -11,7 +11,7 @@
 
 TaskFlow is designed as a collaborative, multi-tenant/organization team task management system. The intended application enables businesses to organize their workforce across departments and teams, manage projects and task lifecycles, assign responsibilities, track progress, maintain audit trails through comments, and manage employee lifecycles with role-based access control (Admin, Manager, Employee).
 
-The repository contains a stabilized FastAPI backend application with support for secure authentication, employee lifecycle management, team management, automated pytest test suite, Docker Compose definitions for local database services, and technical documentation. The mobile/web frontend directory exists but contains no code.
+The repository contains a stabilized FastAPI backend application with support for secure authentication, user profile and password management, employee lifecycle management, team management, automated pytest test suite (17 passing tests), Docker Compose definitions for local database services, and technical documentation. The mobile/web frontend directory exists but contains no code.
 
 ---
 
@@ -82,14 +82,14 @@ TaskFlow/
     │   ├── repositories/               # Repository pattern directory (reserved)
     │   ├── routes/
     │   │   ├── __init__.py             # Route package init
-    │   │   ├── auth.py                 # User registration, login, and bootstrap
+    │   │   ├── auth.py                 # Registration, login, profile, password change
     │   │   ├── employees.py            # Employee management CRUD routes
     │   │   ├── health.py               # Health check and diagnostic routes
     │   │   └── teams.py                # Team management routes
     │   ├── schemas/
     │   │   ├── employee_schema.py      # Pydantic models for employee operations
     │   │   ├── team_schema.py          # Pydantic models for team operations
-    │   │   └── user_schema.py          # Pydantic models for user auth
+    │   │   └── user_schema.py          # Pydantic models for user auth & password
     │   ├── services/
     │   │   ├── employee_service.py     # Employee business logic and MongoDB operations
     │   │   └── team_service.py         # Team business logic and MongoDB operations
@@ -99,7 +99,7 @@ TaskFlow/
     └── tests/                          # Automated pytest suite
         ├── __init__.py
         ├── conftest.py                 # Async test fixtures and mock collection engine
-        ├── test_auth.py                # Auth, registration, and status tests
+        ├── test_auth.py                # Auth, registration, profile, password change tests
         ├── test_employees.py           # Employee CRUD, RBAC, and deactivation tests
         ├── test_object_id.py           # ObjectId validation unit tests
         └── test_teams.py               # Team CRUD and validation tests
@@ -133,8 +133,6 @@ The Python backend pins the following exact package versions:
 ## 5. Current Development Environment
 
 ### 5.1 Local Services (`compose.yaml`)
-
-The repository provides a Docker Compose file defining infrastructure services for local development:
 
 ```yaml
 services:
@@ -216,7 +214,9 @@ volumes:
 ## 9. Authentication and Authorization
 
 - **Public Registration:** Secured. Client cannot supply role; regular registrations default to `employee`. The very first registered user on an empty database is bootstrapped as `admin`.
-- **Active Account Check:** `get_current_user` queries MongoDB to confirm the user account is active, blocking deactivated users immediately.
+- **Active Account Check:** `get_current_user` queries MongoDB to confirm the user account is active, blocking deactivated users with `403 Forbidden` and deleted accounts with `401 Unauthorized`.
+- **User Profile:** `GET /auth/me` retrieves current user profile omitting password hash.
+- **Password Change:** `PUT /auth/password` validates current password, enforces minimum length of 8, and executes an atomic MongoDB update.
 - **Employee Deactivation:** `PATCH /employees/{id}/deactivate` deactivates both employee profile and user login account.
 
 ---
@@ -233,6 +233,8 @@ volumes:
 | `GET` | `/admin-test` | Admin authorization test endpoint | Required (Bearer) | Role: `admin` | ✅ IMPLEMENTED |
 | `POST` | `/auth/register` | Register new user account | None (Public) | None (1st user admin, others employee) | ✅ IMPLEMENTED |
 | `POST` | `/auth/login` | Authenticate user & issue JWT | None (Public) | None (Checks active status) | ✅ IMPLEMENTED |
+| `GET` | `/auth/me` | Retrieve authenticated user profile | Required (Bearer) | Any active user | ✅ IMPLEMENTED |
+| `PUT` | `/auth/password` | Change user password | Required (Bearer) | Any active user | ✅ IMPLEMENTED |
 | `POST` | `/employees/` | Create employee profile & user | Required (Bearer) | Role: `admin` | ✅ IMPLEMENTED |
 | `GET` | `/employees/` | List all employees | Required (Bearer) | Role: `admin`, `manager` | ✅ IMPLEMENTED |
 | `GET` | `/employees/{employee_id}` | Retrieve employee by ID | Required (Bearer) | Role: `admin`, `manager` | ✅ IMPLEMENTED |
@@ -246,8 +248,8 @@ volumes:
 
 ## 11. API Design Review
 
-- **Status Codes:** Standardized (HTTP `201 Created` for POST creation routes, `400 Bad Request` for malformed IDs, `401` for inactive/invalid auth, `404` for missing resources).
-- **Response Models:** All routes decorated with Pydantic response models (`UserRegisterResponseSchema`, `TokenResponseSchema`, `EmployeeResponseSchema`, `EmployeeCreateResponseSchema`, `TeamResponseSchema`). Sensitive fields (e.g., password hashes) are omitted from API schemas.
+- **Status Codes:** Standardized (HTTP `200 OK` for profile/password updates/reads, `201 Created` for POST creation routes, `400 Bad Request` for malformed IDs, `401` for unauthenticated/deleted users/wrong password, `403` for inactive users/insufficient permissions, `422` for schema validation failures).
+- **Response Models:** All routes decorated with Pydantic response models (`UserRegisterResponseSchema`, `TokenResponseSchema`, `UserResponseSchema`, `PasswordChangeResponseSchema`, `EmployeeResponseSchema`, `EmployeeCreateResponseSchema`, `TeamResponseSchema`). Sensitive fields (e.g., password hashes) are omitted from API schemas.
 - **ObjectId Validation:** Centralized `validate_object_id` utility prevents unhandled 500 server errors on invalid ID strings.
 
 ---
@@ -261,9 +263,9 @@ volumes:
 | MongoDB | ✅ IMPLEMENTED | Motor async client with startup index initialization. |
 | Redis | 🟡 PARTIALLY IMPLEMENTED | Connected on startup; caching features planned for Phase 6. |
 | Docker | 🟡 PARTIALLY IMPLEMENTED | `compose.yaml` runs MongoDB & Redis; backend Dockerfile planned for Phase 8. |
-| Authentication | ✅ IMPLEMENTED | Secured registration, login, bcrypt hashing, JWT issuance and validation. |
+| Authentication | ✅ IMPLEMENTED | Registration, login, profile (`/auth/me`), password change (`/auth/password`), bcrypt hashing, JWT issuance and validation. |
 | Authorization | ✅ IMPLEMENTED | Role checks (`admin`, `manager`, `employee`) and active account enforcement. |
-| User management | ✅ IMPLEMENTED | Secured registration, bootstrap admin, user status sync. |
+| User management | ✅ IMPLEMENTED | Secured registration, bootstrap admin, user profile, password change, user status sync. |
 | Employee management | ✅ IMPLEMENTED | Full CRUD with response models and random password generation. |
 | Employee deactivation | ✅ IMPLEMENTED | Soft-deactivation with synchronized user account revocation. |
 | Team management | 🟡 PARTIALLY IMPLEMENTED | Create, list, and get team endpoints exist; team member assignment planned. |
@@ -278,14 +280,14 @@ volumes:
 | Notifications | ❌ NOT IMPLEMENTED | Planned for Phase 6. |
 | Flutter frontend | ❌ NOT IMPLEMENTED | Planned for Phase 7. |
 | API integration | ❌ NOT IMPLEMENTED | Planned for Phase 7. |
-| Testing | ✅ IMPLEMENTED | 12 automated unit and integration tests passing via pytest. |
-| Documentation | ✅ IMPLEMENTED | `API.md`, `DATABASE.md`, `SETUP.md`, `DECISIONS.md`, and `AUDIT.md` fully updated. |
+| Testing | ✅ IMPLEMENTED | 17 automated unit and integration tests passing via pytest. |
+| Documentation | ✅ IMPLEMENTED | `API.md`, `DATABASE.md`, `SETUP.md`, `DECISIONS.md`, `ERRORS.md`, and `AUDIT.md` fully updated. |
 
 ---
 
 ## 13. Current Issues and Technical Debt
 
-### 13.1 Phase 0 Resolved Issues
+### 13.1 Phase 0 & Phase 1 Resolved Issues
 
 1. ✅ **Privilege Escalation via Self-Registration:** Fixed in `app/schemas/user_schema.py` & `app/routes/auth.py`.
 2. ✅ **Hardcoded Initial Password:** Fixed in `app/core/security.py` & `app/routes/employees.py`.
@@ -295,18 +297,23 @@ volumes:
 6. ✅ **Date Update Inconsistency:** Fixed in `app/services/employee_service.py`.
 7. ✅ **Deprecated Lifecycle Handlers:** Migrated to async lifespan handler in `app/main.py`.
 8. ✅ **Missing Response Models:** Added explicit response schemas across all endpoints.
-9. ✅ **Missing Automated Tests:** Added pytest suite in `tests/` with 12 passing tests.
+9. ✅ **Missing User Profile & Password Change:** Implemented `GET /auth/me` and `PUT /auth/password`.
+10. ✅ **Strict Input Validation & Sanitization:** Enforced `extra="forbid"`, min length 8 on passwords, trimmed non-password strings, preserved exact password whitespace.
+11. ✅ **Missing Automated Tests:** Added pytest suite in `tests/` with 17 passing tests.
 
 ---
 
 ## 14. Testing Status
 
 - **Framework:** Pytest 9.1.1 with pytest-asyncio and httpx.
-- **Suite Results:** 12 passed in ~3.5s.
+- **Suite Results:** 17 passed in ~6.1s.
 - **Coverage Highlights:**
   - Role security during public registration & first user bootstrap.
-  - Login authentication & token issuance.
-  - Inactive user rejection during login and token validation.
+  - Login authentication, token issuance, and password validation.
+  - Inactive user rejection during login (403) and token validation (403).
+  - Current user profile retrieval (`GET /auth/me`) and deleted user rejection (401).
+  - Password change (`PUT /auth/password`) verifying current password, atomic update, and invalidation of old credentials.
+  - Strict input validation and exact password whitespace preservation.
   - Temporary password generation during employee creation.
   - ObjectId format validation returning HTTP 400.
   - Employee `joining_date` BSON date normalization.
@@ -318,7 +325,7 @@ volumes:
 ## 15. Recommended Implementation Roadmap
 
 - **Phase 0:** ✅ Security & Backend Stabilization *(Completed)*
-- **Phase 1:** Authentication, Authorization & User Profile Management
+- **Phase 1:** ✅ Authentication, Authorization & User Profile Management *(Completed)*
 - **Phase 2:** Team Management Completion & Member Assignment
 - **Phase 3:** Project Management
 - **Phase 4:** Task Management & Workflows
@@ -331,4 +338,4 @@ volumes:
 
 ## 16. Audit Summary
 
-Phase 0 has stabilized the TaskFlow backend. The critical security vulnerabilities (role escalation, hardcoded passwords, token reuse for deactivated accounts, unhandled ObjectId server crashes) have been resolved. The application now uses modern FastAPI lifespan management, automatic database indexing, and explicit response models, verified by an automated pytest test suite.
+Phase 1 has established robust identity, authorization, and profile management for TaskFlow. Users can retrieve their active profile (`GET /auth/me`) and securely update their password (`PUT /auth/password`) with atomic updates and verification. Deactivated and deleted accounts are properly handled with distinct 403 and 401 statuses, while exact password whitespace is preserved and all endpoints are protected by Pydantic response models and verified by 17 automated tests.

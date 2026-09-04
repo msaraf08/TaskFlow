@@ -150,19 +150,19 @@ async def test_deactivate_employee_blocks_authentication(client, admin_auth, moc
     deact_resp = await client.patch(f"/employees/{emp_id}/deactivate", headers=headers)
     assert deact_resp.status_code == 200
 
-    # Bob attempts to log in again -> fails (401)
+    # Bob attempts to log in again -> fails (403 Forbidden)
     login_after = await client.post(
         "/auth/login",
         json={"email": "bob@example.com", "password": "BobInitialPassword123"}
     )
-    assert login_after.status_code == 401
+    assert login_after.status_code == 403
 
-    # Bob's existing token is rejected on protected endpoint
+    # Bob's existing token is rejected on protected endpoint (403 Forbidden)
     prot_resp = await client.get(
         "/protected",
         headers={"Authorization": f"Bearer {bob_token}"}
     )
-    assert prot_resp.status_code == 401
+    assert prot_resp.status_code == 403
 
 
 @pytest.mark.asyncio

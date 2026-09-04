@@ -33,3 +33,27 @@
 ## Decision 006: Reusable MongoDB ObjectId Validation
 - **Context:** Direct conversion of request parameters using `ObjectId(id)` threw unhandled `bson.errors.InvalidId` exceptions resulting in 500 Internal Server Error.
 - **Decision:** Created a centralized `validate_object_id` helper in `app/utils/object_id.py` that validates format and returns HTTP 400 Bad Request on invalid inputs.
+
+---
+
+## Decision 007: Database Verification & Explicit 401/403 Distinction in Auth
+- **Context:** Authentication dependencies must differentiate between unauthenticated/missing credentials and unauthorized/inactive access.
+- **Decision:** `get_current_user` verifies the token against the database on each request. Missing/expired tokens or deleted accounts return `401 Unauthorized`. Inactive accounts return `403 Forbidden`.
+
+---
+
+## Decision 008: Password Change Current Password Verification & Atomic Updates
+- **Context:** Password modifications must ensure the requester knows the existing password and updates must not suffer race conditions.
+- **Decision:** `PUT /auth/password` requires verifying `current_password` via bcrypt before generating the new hash and executing an atomic `$set` update in MongoDB.
+
+---
+
+## Decision 009: JWT Validity Post-Password Change in MVP
+- **Context:** Invalidation of existing JWTs after a password change requires a distributed token blacklist or issued-at timestamp tracking in the database.
+- **Decision:** For the MVP, issued JWTs remain valid until their natural expiration (30 minutes). Token blacklisting with Redis will be evaluated in Phase 6.
+
+---
+
+## Decision 010: Deferral of Refresh Token Infrastructure
+- **Context:** Access token lifetime is configured to 30 minutes, providing a practical balance between security and user experience for the MVP.
+- **Decision:** Refresh tokens are deferred to maintain a simple, robust authentication architecture without premature complexity.

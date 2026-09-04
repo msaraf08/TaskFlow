@@ -30,7 +30,7 @@ async def get_current_user(
             detail="Invalid user identifier in token"
         )
 
-    user = await user_collection.find_one({"_id": user_id})
+    user = await user_collection.find_one({"_id": user_id}, {"password": 0})
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -39,12 +39,13 @@ async def get_current_user(
 
     if user.get("status") == "inactive":
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is inactive"
         )
 
     return {
         "user_id": str(user["_id"]),
+        "id": str(user["_id"]),
         "name": user.get("name"),
         "email": user.get("email"),
         "role": user.get("role"),

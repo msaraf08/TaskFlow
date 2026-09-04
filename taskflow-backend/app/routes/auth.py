@@ -1,14 +1,22 @@
+import logging
+from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status
+
 from app.schemas.user_schema import (
     UserCreateSchema,
     UserLoginSchema,
+    UserPasswordChangeSchema,
     UserRegisterResponseSchema,
     TokenResponseSchema,
-    UserResponseSchema
+    UserResponseSchema,
+    PasswordChangeResponseSchema
 )
 from app.database.dependencies import get_user_collection
 from app.core.security import hash_password, verify_password
 from app.core.jwt import create_access_token
+from app.core.dependencies import get_current_user
+
+logger = logging.getLogger("taskflow.auth")
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -24,6 +32,7 @@ async def register_user(
 ):
     existing = await collection.find_one({"email": user.email})
     if existing:
+        logger.warning(f"Registration rejected: Email {user.email} already exists")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User already exists"
@@ -68,20 +77,23 @@ async def login_user(
     db_user = await collection.find_one({"email": user.email})
 
     if not db_user:
+        logger.warning(f"Login failed: Non-existent user {user.email}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid credentials"
         )
 
     if not verify_password(user.password, db_user["password"]):
+        logger.warning(f"Login failed: Incorrect password for user {user.email}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid credentials"
         )
 
     if db_user.get("status") == "inactive":
+        logger.warning(f"Login rejected: Inactive account {user.email}")
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is inactive"
         )
 
@@ -93,4 +105,60 @@ async def login_user(
     return {
         "access_token": token,
         "token_type": "bearer"
+    }
+
+
+@router.get(
+    "/me",
+    response_model=UserResponseSchema
+)
+async def get_current_user_profile(
+    current_user: dict = Depends(get_current_user)
+):
+    return UserResponseSchema(
+        id=current_user["user_id"],
+        name=current_user["name"],
+        email=current_user["email"],
+        role=current_user["role"],
+        status=current_user["status"]
+    )
+
+
+@router.put(
+    "/password",
+    response_model=PasswordChangeResponseSchema
+)
+async def change_password(
+    data: UserPasswordChangeSchema,
+    current_user: dict = Depends(get_current_user),
+    collection=Depends(get_user_collection)
+):
+    user_id = ObjectId(current_user["user_id"])
+    db_user = await collection.find_one({"_id": user_id})
+
+    if not db_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account no longer exists"
+        )
+
+    if not verify_password(data.current_password, db_user["password"]):
+        logger.warning(f"Password change failed: Incorrect current password for user {current_user['email']}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect current password"
+        )
+
+    new_hashed_password = hash_password(data.new_password)
+
+    # Perform atomic update on password field
+    await collection.update_one(
+        {"_id": user_id},
+        {"$set": {"password": new_hashed_password}}
+    )
+
+    logger.info(f"Password changed successfully for user {current_user['email']}")
+
+    return {
+        "message": "Password changed successfully"
     }

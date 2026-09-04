@@ -52,16 +52,29 @@ class InMemoryAsyncCollection:
                 return False
         return True
 
-    async def find_one(self, query: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    async def find_one(self, query: Dict[str, Any], projection: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         for d in self.docs:
             if self._matches(d, query):
-                return copy.deepcopy(d)
+                res = copy.deepcopy(d)
+                if projection:
+                    for pk, pv in projection.items():
+                        if pv == 0 and pk in res:
+                            del res[pk]
+                return res
         return None
 
-    def find(self, query: Optional[Dict[str, Any]] = None) -> InMemoryAsyncCursor:
+    def find(self, query: Optional[Dict[str, Any]] = None, projection: Optional[Dict[str, Any]] = None) -> InMemoryAsyncCursor:
         if query is None:
             query = {}
-        matched = [d for d in self.docs if self._matches(d, query)]
+        matched = []
+        for d in self.docs:
+            if self._matches(d, query):
+                res = copy.deepcopy(d)
+                if projection:
+                    for pk, pv in projection.items():
+                        if pv == 0 and pk in res:
+                            del res[pk]
+                matched.append(res)
         return InMemoryAsyncCursor(matched)
 
     async def insert_one(self, doc: Dict[str, Any]) -> InsertResult:
