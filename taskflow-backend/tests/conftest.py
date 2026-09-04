@@ -162,6 +162,89 @@ class InMemoryAsyncCollection:
         pass
 
 
+import time
+import fnmatch
+from app.database.redis import redis_manager
+
+
+class InMemoryAsyncRedis:
+    def __init__(self):
+        self.store: Dict[str, str] = {}
+        self.expires: Dict[str, float] = {}
+
+    def _is_expired(self, key: str) -> bool:
+        if key in self.expires:
+            if time.time() > self.expires[key]:
+                self.store.pop(key, None)
+                self.expires.pop(key, None)
+                return True
+        return False
+
+    async def get(self, key: str) -> Optional[str]:
+        if self._is_expired(key):
+            return None
+        return self.store.get(key)
+
+    async def set(self, key: str, value: str, ex: Optional[int] = None) -> bool:
+        self.store[key] = str(value)
+        if ex is not None:
+            self.expires[key] = time.time() + ex
+        else:
+            self.expires.pop(key, None)
+        return True
+
+    async def delete(self, *keys: str) -> int:
+        count = 0
+        for k in keys:
+            if k in self.store:
+                self.store.pop(k, None)
+                self.expires.pop(k, None)
+                count += 1
+        return count
+
+    async def incr(self, key: str) -> int:
+        if self._is_expired(key):
+            self.store[key] = "0"
+        val = int(self.store.get(key, 0)) + 1
+        self.store[key] = str(val)
+        return val
+
+    async def expire(self, key: str, seconds: int) -> bool:
+        if key in self.store and not self._is_expired(key):
+            self.expires[key] = time.time() + seconds
+            return True
+        return False
+
+    async def ttl(self, key: str) -> int:
+        if self._is_expired(key) or key not in self.store:
+            return -2
+        if key in self.expires:
+            remaining = int(self.expires[key] - time.time())
+            return max(remaining, 0)
+        return -1
+
+    async def ping(self) -> bool:
+        return True
+
+    async def close(self) -> None:
+        self.store.clear()
+        self.expires.clear()
+
+    async def scan_iter(self, match: str = "*"):
+        for k in list(self.store.keys()):
+            if not self._is_expired(k) and fnmatch.fnmatch(k, match):
+                yield k
+
+
+@pytest.fixture
+def mock_redis():
+    mock = InMemoryAsyncRedis()
+    original_client = redis_manager.client
+    redis_manager.client = mock
+    yield mock
+    redis_manager.client = original_client
+
+
 @pytest.fixture
 def mock_users_collection():
     return InMemoryAsyncCollection()
@@ -206,6 +289,7 @@ async def client(
     mock_tasks_collection,
     mock_comments_collection,
     mock_activities_collection,
+    mock_redis,
 ):
     app.dependency_overrides[get_user_collection] = lambda: mock_users_collection
     app.dependency_overrides[get_employee_collection] = lambda: mock_employees_collection

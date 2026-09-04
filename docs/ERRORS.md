@@ -185,3 +185,19 @@ pip install bcrypt==4.3.0
   - *Resolution:* Supply a valid action string (e.g. `task_created`, `task_status_changed`, `comment_created`).
 - **Cause 2 (Invalid Entity Type Filter):** `entity_type` query parameter is not one of `task`, `comment`, `project`, or `team`.
   - *Resolution:* Supply a valid entity type string.
+
+---
+
+## 8. Redis Caching & Rate Limiting Error Scenarios
+
+### HTTP 429 Too Many Requests
+- **Cause 1 (Authentication Rate Limit Exceeded):** More than 5 requests submitted to `/auth/login`, `/auth/register`, or `/auth/password` from the same client IP within a 60-second window.
+  - *Resolution:* Wait for the window to expire as indicated by the `Retry-After` response header before resubmitting credentials.
+
+### Redis Connection Offline / Unreachable
+- **Behavior:** The application logs a `WARNING` and automatically degrades to direct MongoDB execution without throwing `500 Internal Server Error` or preventing FastAPI startup.
+  - *Resolution:* Start Redis via `docker compose up -d redis` or start a local Redis server on `localhost:6379`. No code changes required.
+
+### Redis Mutation Invalidation Failure
+- **Behavior:** If Redis encounters network errors or timeouts during cache deletion after a write, the error is caught and logged as a warning; the API operation succeeds normally without breaking client requests.
+  - *Resolution:* Check Redis connectivity and system logs. Caches will automatically expire within 300 seconds (TTL).

@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.7.0 - Phase 6: Redis Integration (Caching, Invalidation & Auth Rate Limiting)
+
+### Added
+- Centralized `RedisManager` in `app/database/redis.py` with connection pooling, socket timeouts, health checks (`ping`), and fail-open startup/runtime exception handling.
+- JSON detail response caching for `GET /teams/{team_id}`, `GET /projects/{project_id}`, and `GET /tasks/{task_id}` with a 300-second TTL and `_cached_at` ISO 8601 timestamp.
+- Strict authorization-before-cache validation ensuring cached data is never returned to unauthorized users.
+- Exact cache invalidation on team, project, and task update, delete, and member change endpoints.
+- Fixed-window rate limiter dependency (5 req / 60s per client IP) on `POST /auth/login`, `POST /auth/register`, and `PUT /auth/password`, returning `429 Too Many Requests` with a `Retry-After` header.
+- Fail-open resilience on all cache and rate limiting operations: API calls transparently fall back to MongoDB if Redis is offline.
+- Automated test suite expanded to 50 passing test cases with in-memory Redis mocking.
+
 ## v0.6.0 - Phase 5: Comments + Activity / Audit Trail
 
 ### Added

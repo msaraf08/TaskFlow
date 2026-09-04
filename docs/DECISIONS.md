@@ -177,3 +177,33 @@
 ## Decision 030: Activity Metadata Whitelist & Content Preview Sanitization
 - **Context:** Activity audit logs could accidentally leak sensitive tokens, passwords, or PII.
 - **Decision:** Restrict activity `metadata` to a flat dictionary of max 5 key-value pairs using a strict key whitelist (`old_value`, `new_value`, `title`, `name`, `assigned_to`, `content_preview`). Truncate comment content previews to 100 characters max and strictly prohibit storing credentials, full bodies, or stack traces.
+
+---
+
+## Decision 031: Centralized Fail-Open Redis Manager Architecture
+- **Context:** Redis serves as an optimization and supporting service. Network partitions, startup timing, or Redis downtime should not bring down the application.
+- **Decision:** Implement a centralized singleton `RedisManager` in `app/database/redis.py` that connects with a 1.0-second socket timeout and catches connection failures at startup and runtime. If Redis is unavailable, the application logs a warning and transparently fails open to MongoDB.
+
+---
+
+## Decision 032: Selective Detail Endpoint Caching with Exact Invalidation
+- **Context:** List endpoints have complex RBAC filters, search parameters, and pagination that make cache invalidation error-prone.
+- **Decision:** Cache only detail endpoints (`GET /teams/{team_id}`, `GET /projects/{project_id}`, `GET /tasks/{task_id}`) with a 300-second TTL. Invalidate exact keys (`team:{id}`, `project:{id}`, `task:{id}`) immediately after successful MongoDB mutations. Do not cache list endpoints or use broad wildcard pattern deletion.
+
+---
+
+## Decision 033: Authorization Prior to Cache Retrieval
+- **Context:** Storing user credentials or roles in cache keys creates security vulnerabilities and cache bloat.
+- **Decision:** Cache keys contain only entity identifiers (`{entity}:{id}`). All requests must undergo standard JWT authentication and RBAC validation before any cached data is returned to the client, guaranteeing that unauthorized users receive `403 Forbidden` without accessing cached entity payloads.
+
+---
+
+## Decision 034: JSON Serialization with ISO Timestamping for Cache Values
+- **Context:** Cached data must be easily inspectable, portable, and secure against deserialization exploits.
+- **Decision:** Use standard `json.dumps()` and `json.loads()` with ISO 8601 datetime strings. Binary serializers such as `pickle` or `msgpack` are strictly prohibited. Every cached entity includes a `_cached_at` timestamp.
+
+---
+
+## Decision 035: Fixed-Window Redis Rate Limiting on Authentication Endpoints
+- **Context:** Authentication endpoints require protection against brute-force and credential stuffing attacks without introducing heavy third-party dependencies.
+- **Decision:** Implement a lightweight, dependency-injected fixed-window rate limiter (5 requests / 60 seconds per client IP) using Redis atomic `INCR` and `EXPIRE`. When exceeded, return `HTTP 429 Too Many Requests` with a `Retry-After` header. If Redis is offline, fail open to avoid locking out legitimate users.

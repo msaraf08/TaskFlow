@@ -212,6 +212,23 @@ Stores system activity and audit trail records. Activities capture state-modifyi
 
 ---
 
+## Redis In-Memory Storage & Cache Design
+
+Redis functions exclusively as an ephemeral supporting layer for response caching and authentication rate limiting. MongoDB remains the authoritative source of truth.
+
+### Cache Keys & Lifecycles
+- `team:{team_id}`: Detail view of a team (TTL: 300 seconds). Invalidated on team update/deletion and member additions/removals.
+- `project:{project_id}`: Detail view of a project (TTL: 300 seconds). Invalidated on project update/deletion.
+- `task:{task_id}`: Detail view of a task (TTL: 300 seconds). Invalidated on task update/deletion.
+- `ratelimit:{endpoint}:{client_ip}`: Fixed-window rate limit counter (TTL: 60 seconds). Max 5 requests per window.
+
+### Cache Rules
+- Cached records use JSON serialization and contain a `_cached_at` ISO 8601 timestamp.
+- No sensitive credentials, passwords, or JWTs are stored in Redis.
+- Authorization checks are performed prior to returning cached records.
+
+---
+
 ## Index Initialization
 
 Database indexes are automatically created/verified at application startup during the FastAPI `lifespan` handler (`db.init_indexes()`).

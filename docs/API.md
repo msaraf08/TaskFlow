@@ -626,3 +626,40 @@ Tokens are validated against cryptographic signatures, expiration time, and acti
   - `401 Unauthorized`: Missing or invalid token.
   - `403 Forbidden`: Inactive user account.
   - `422 Unprocessable Entity`: Invalid `action` or `entity_type` parameter.
+
+---
+
+### 9. Redis Integration, Caching & Rate Limiting
+
+#### Caching Strategy
+- **Cached Endpoints (Detail only):**
+  - `GET /teams/{team_id}` (key: `team:{team_id}`)
+  - `GET /projects/{project_id}` (key: `project:{project_id}`)
+  - `GET /tasks/{task_id}` (key: `task:{task_id}`)
+- **Cache TTL:** 300 seconds (5 minutes).
+- **Serialization:** Standard JSON with embedded ISO timestamp (`_cached_at`).
+- **Authorization Before Cache Access:** The system strictly evaluates authentication and role-based permissions before returning cached data. Unauthorized users receive `403 Forbidden` without viewing cached entity payloads.
+- **Cache Invalidation:**
+  - `PUT /teams/{team_id}`, `DELETE /teams/{team_id}`, `POST /teams/{team_id}/members`, `DELETE /teams/{team_id}/members/{employee_id}` -> invalidates `team:{team_id}`.
+  - `PUT /projects/{project_id}`, `DELETE /projects/{project_id}` -> invalidates `project:{project_id}`.
+  - `PUT /tasks/{task_id}`, `DELETE /tasks/{task_id}` -> invalidates `task:{task_id}`.
+- **Resilience:** If Redis is offline or encounters errors, the API fails open and queries MongoDB transparently.
+
+#### Authentication Rate Limiting
+- **Protected Endpoints:**
+  - `POST /auth/login`
+  - `POST /auth/register`
+  - `PUT /auth/password`
+- **Policy:** Fixed-window limiter of 5 requests per 60 seconds per client IP.
+- **Key Format:** `ratelimit:{endpoint}:{client_ip}`
+- **Exceeded Limit Response (`429 Too Many Requests`):**
+  ```http
+  HTTP/1.1 429 Too Many Requests
+  Retry-After: 48
+  Content-Type: application/json
+
+  {
+    "detail": "Too many requests"
+  }
+  ```
+- **Fail-Open Behavior:** If Redis is down, authentication endpoints log a warning and continue processing requests.

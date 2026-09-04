@@ -1,6 +1,6 @@
 # TaskFlow - Project Audit
 
-**Document Version:** 1.6.0  
+**Document Version:** 1.7.0  
 **Audit Date:** September 2026  
 **Repository:** TaskFlow  
 **Audit Scope:** Full Codebase, Configuration, Infrastructure, Documentation, Security, and Architecture  
@@ -9,9 +9,9 @@
 
 ## 1. Project Overview
 
-TaskFlow is designed as a collaborative, multi-tenant/organization team task management system. The intended application enables businesses to organize their workforce across departments and teams, manage projects and task lifecycles, assign responsibilities, track progress, maintain audit trails through comments and activity logs, and manage employee lifecycles with role-based access control (Admin, Manager, Employee).
+TaskFlow is designed as a collaborative, multi-tenant/organization team task management system. The intended application enables businesses to organize their workforce across departments and teams, manage projects and task lifecycles, assign responsibilities, track progress, maintain audit trails through comments and activity logs, optimize response times through Redis caching and rate limiting, and manage employee lifecycles with role-based access control (Admin, Manager, Employee).
 
-The repository contains a stabilized FastAPI backend application with support for secure authentication, user profile and password management, employee lifecycle management, team management with member assignment, project management with team association, task management with project association, task comments with cascade deletion, system-wide activity and audit trail logging with scoped visibility, automated pytest test suite (33 passing tests), Docker Compose definitions for local database services, and technical documentation. The mobile/web frontend directory exists but contains no code.
+The repository contains a stabilized FastAPI backend application with support for secure authentication, user profile and password management, employee lifecycle management, team management with member assignment, project management with team association, task management with project association, task comments with cascade deletion, system-wide activity and audit trail logging with scoped visibility, Redis detail endpoint caching and auth rate limiting with fail-open resilience, automated pytest test suite (50 passing tests), Docker Compose definitions for local database services, and technical documentation. The mobile/web frontend directory exists but contains no code.
 
 ---
 
@@ -211,7 +211,7 @@ volumes:
 
 ### 8.2 Redis Usage Audit
 
-- **Current State:** Connected on startup and disconnected on shutdown. Available via `get_redis` dependency for future caching, rate limiting, and session invalidation.
+- **Current State:** Connected on startup and disconnected on shutdown with fail-open error handling. Centralized `RedisManager` provides connection pooling and health checks (`ping`). Detail endpoint JSON caching (`team:{id}`, `project:{id}`, `task:{id}`) with 300s TTL and exact mutation invalidation. Fixed-window rate limiting on `/auth/login`, `/auth/register`, and `/auth/password` (5 requests / 60 seconds per IP) returning HTTP 429 with `Retry-After`. All Redis failures fail open without impacting MongoDB-backed functionality.
 
 ---
 
@@ -222,6 +222,7 @@ volumes:
 - **User Profile:** `GET /auth/me` retrieves current user profile omitting password hash.
 - **Password Change:** `PUT /auth/password` validates current password, enforces minimum length of 8, and executes an atomic MongoDB update.
 - **Employee Deactivation:** `PATCH /employees/{id}/deactivate` deactivates both employee profile and user login account.
+- **Rate Limiting:** Auth endpoints (`POST /auth/register`, `POST /auth/login`, `PUT /auth/password`) are protected by a 5 req/60s rate limiter with fail-open resilience.
 
 ---
 
@@ -235,10 +236,10 @@ volumes:
 | `GET` | `/health` | Service health check | None (Public) | None | ✅ IMPLEMENTED |
 | `GET` | `/protected` | Authenticated test endpoint | Required (Bearer) | Any active user | ✅ IMPLEMENTED |
 | `GET` | `/admin-test` | Admin authorization test endpoint | Required (Bearer) | Role: `admin` | ✅ IMPLEMENTED |
-| `POST` | `/auth/register` | Register new user account | None (Public) | None (1st user admin, others employee) | ✅ IMPLEMENTED |
-| `POST` | `/auth/login` | Authenticate user & issue JWT | None (Public) | None (Checks active status) | ✅ IMPLEMENTED |
+| `POST` | `/auth/register` | Register new user account | None (Public) | Rate Limited (5/60s); 1st user admin | ✅ IMPLEMENTED |
+| `POST` | `/auth/login` | Authenticate user & issue JWT | None (Public) | Rate Limited (5/60s); Active check | ✅ IMPLEMENTED |
 | `GET` | `/auth/me` | Retrieve authenticated user profile | Required (Bearer) | Any active user | ✅ IMPLEMENTED |
-| `PUT` | `/auth/password` | Change user password | Required (Bearer) | Any active user | ✅ IMPLEMENTED |
+| `PUT` | `/auth/password` | Change user password | Required (Bearer) | Rate Limited (5/60s); Active user | ✅ IMPLEMENTED |
 | `POST` | `/employees/` | Create employee profile & user | Required (Bearer) | Role: `admin` | ✅ IMPLEMENTED |
 | `GET` | `/employees/` | List all employees | Required (Bearer) | Role: `admin`, `manager` | ✅ IMPLEMENTED |
 | `GET` | `/employees/{employee_id}` | Retrieve employee by ID | Required (Bearer) | Role: `admin`, `manager` | ✅ IMPLEMENTED |
@@ -246,21 +247,21 @@ volumes:
 | `PATCH` | `/employees/{employee_id}/deactivate` | Deactivate employee & user | Required (Bearer) | Role: `admin` | ✅ IMPLEMENTED |
 | `POST` | `/teams/` | Create a new team | Required (Bearer) | Role: `admin`, `manager` | ✅ IMPLEMENTED |
 | `GET` | `/teams/` | List teams (all for admin/manager, member-only for employee) | Required (Bearer) | Any active role | ✅ IMPLEMENTED |
-| `GET` | `/teams/{team_id}` | Retrieve team by ID (member-only check for employee) | Required (Bearer) | Any active role | ✅ IMPLEMENTED |
-| `PUT` | `/teams/{team_id}` | Partial update team details | Required (Bearer) | Role: `admin`, or Manager of own team | ✅ IMPLEMENTED |
-| `DELETE` | `/teams/{team_id}` | Hard delete team | Required (Bearer) | Role: `admin`, or Manager of own team | ✅ IMPLEMENTED |
-| `POST` | `/teams/{team_id}/members` | Add employee to team member roster | Required (Bearer) | Role: `admin`, or Manager of own team | ✅ IMPLEMENTED |
-| `DELETE` | `/teams/{team_id}/members/{employee_id}` | Remove employee from team member roster | Required (Bearer) | Role: `admin`, or Manager of own team | ✅ IMPLEMENTED |
+| `GET` | `/teams/{team_id}` | Retrieve team by ID (cached, 300s TTL) | Required (Bearer) | Any active role (scoped) | ✅ IMPLEMENTED |
+| `PUT` | `/teams/{team_id}` | Partial update team details (invalidates cache) | Required (Bearer) | Role: `admin`, or Manager of own team | ✅ IMPLEMENTED |
+| `DELETE` | `/teams/{team_id}` | Hard delete team (invalidates cache) | Required (Bearer) | Role: `admin`, or Manager of own team | ✅ IMPLEMENTED |
+| `POST` | `/teams/{team_id}/members` | Add employee to team member roster (invalidates cache) | Required (Bearer) | Role: `admin`, or Manager of own team | ✅ IMPLEMENTED |
+| `DELETE` | `/teams/{team_id}/members/{employee_id}` | Remove employee from team member roster (invalidates cache) | Required (Bearer) | Role: `admin`, or Manager of own team | ✅ IMPLEMENTED |
 | `POST` | `/projects/` | Create a new project | Required (Bearer) | Role: `admin`, or Manager of target team | ✅ IMPLEMENTED |
 | `GET` | `/projects/` | List projects (all for admin, managed for manager, member for employee) | Required (Bearer) | Any active role | ✅ IMPLEMENTED |
-| `GET` | `/projects/{project_id}` | Retrieve project by ID (scoped by manager ownership / member team) | Required (Bearer) | Any active role | ✅ IMPLEMENTED |
-| `PUT` | `/projects/{project_id}` | Partial update project (dual-team check on team transfer) | Required (Bearer) | Role: `admin`, or Manager of current & new team | ✅ IMPLEMENTED |
-| `DELETE` | `/projects/{project_id}` | Hard delete project | Required (Bearer) | Role: `admin`, or Manager of project's team | ✅ IMPLEMENTED |
+| `GET` | `/projects/{project_id}` | Retrieve project by ID (cached, 300s TTL) | Required (Bearer) | Any active role (scoped) | ✅ IMPLEMENTED |
+| `PUT` | `/projects/{project_id}` | Partial update project (invalidates cache) | Required (Bearer) | Role: `admin`, or Manager of current & new team | ✅ IMPLEMENTED |
+| `DELETE` | `/projects/{project_id}` | Hard delete project (invalidates cache) | Required (Bearer) | Role: `admin`, or Manager of project's team | ✅ IMPLEMENTED |
 | `POST` | `/tasks/` | Create a new task | Required (Bearer) | Role: `admin`, or Manager of target project's team | ✅ IMPLEMENTED |
-| `GET` | `/tasks/` | List tasks (filtered by scope and query params: project_id, assigned_to, status, priority) | Required (Bearer) | Any active role | ✅ IMPLEMENTED |
-| `GET` | `/tasks/{task_id}` | Retrieve task by ID (scoped by manager ownership / member team / assignee) | Required (Bearer) | Any active role | ✅ IMPLEMENTED |
-| `PUT` | `/tasks/{task_id}` | Partial update task (scoped; 422 on employee project/assignee change) | Required (Bearer) | Role: `admin`, Manager of task's project team, or assigned Employee | ✅ IMPLEMENTED |
-| `DELETE` | `/tasks/{task_id}` | Hard delete task (cascade deletes comments) | Required (Bearer) | Role: `admin`, or Manager of task's project team | ✅ IMPLEMENTED |
+| `GET` | `/tasks/` | List tasks (filtered by scope and query params) | Required (Bearer) | Any active role | ✅ IMPLEMENTED |
+| `GET` | `/tasks/{task_id}` | Retrieve task by ID (cached, 300s TTL) | Required (Bearer) | Any active role (scoped) | ✅ IMPLEMENTED |
+| `PUT` | `/tasks/{task_id}` | Partial update task (invalidates cache) | Required (Bearer) | Role: `admin`, Manager of project team, or assigned Employee | ✅ IMPLEMENTED |
+| `DELETE` | `/tasks/{task_id}` | Hard delete task (cascade comments, invalidates cache) | Required (Bearer) | Role: `admin`, or Manager of task's project team | ✅ IMPLEMENTED |
 | `POST` | `/tasks/{task_id}/comments` | Create comment on a task | Required (Bearer) | Users with task view access | ✅ IMPLEMENTED |
 | `GET` | `/tasks/{task_id}/comments` | List comments for a task (paginated) | Required (Bearer) | Users with task view access | ✅ IMPLEMENTED |
 | `PUT` | `/comments/{comment_id}` | Edit comment content | Required (Bearer) | Admin, Manager of task's team, or Comment Author | ✅ IMPLEMENTED |
@@ -271,8 +272,8 @@ volumes:
 
 ## 11. API Design Review
 
-- **Status Codes:** Standardized (HTTP `200 OK` for reads/updates/member addition, `201 Created` for creations, `204 No Content` for deletions, `400 Bad Request` for malformed IDs or manager in member list, `401` for unauthenticated/deleted users, `403` for inactive users, unauthorized management/access, or non-member assignee, `404 Not Found` for missing resources, `409 Conflict` for duplicate members, `422` for schema/role/date/filter validation failures, employee project/assignee change attempt, or incompatible assignee on transfer).
-- **Response Models:** All routes decorated with Pydantic response models (`UserRegisterResponseSchema`, `TokenResponseSchema`, `UserResponseSchema`, `PasswordChangeResponseSchema`, `EmployeeResponseSchema`, `EmployeeCreateResponseSchema`, `TeamResponseSchema`, `ProjectResponseSchema`, `TaskResponseSchema`, `CommentResponseSchema`, `ActivityResponseSchema`). Sensitive fields (e.g., password hashes) are omitted from API schemas.
+- **Status Codes:** Standardized (HTTP `200 OK` for reads/updates/member addition, `201 Created` for creations, `204 No Content` for deletions, `400 Bad Request` for malformed IDs or manager in member list, `401` for unauthenticated/deleted users, `403` for inactive users, unauthorized management/access, or non-member assignee, `404 Not Found` for missing resources, `409 Conflict` for duplicate members, `422` for schema/role/date/filter validation failures, employee project/assignee change attempt, or incompatible assignee on transfer, `429 Too Many Requests` for rate-limited auth endpoints with `Retry-After` header).
+- **Response Models:** All routes decorated with Pydantic response models. Sensitive fields (e.g., password hashes) are omitted from API schemas.
 - **ObjectId Validation:** Centralized `validate_object_id` utility prevents unhandled 500 server errors on invalid ID strings.
 
 ---
@@ -284,34 +285,34 @@ volumes:
 | Project setup | ✅ IMPLEMENTED | Python 3.13 venv, directory layout, gitignore configured. |
 | Configuration | ✅ IMPLEMENTED | Pydantic BaseSettings loading from `.env` and `.env.example`. |
 | MongoDB | ✅ IMPLEMENTED | Motor async client with startup index initialization (`users`, `employees`, `teams`, `projects`, `tasks`, `comments`, `activities`). |
-| Redis | 🟡 PARTIALLY IMPLEMENTED | Connected on startup; caching features planned for Phase 6. |
+| Redis | ✅ IMPLEMENTED | Detail endpoint caching (300s TTL), exact mutation invalidation, fixed-window auth rate limiting (5 req/60s), fail-open resilience. |
 | Docker | 🟡 PARTIALLY IMPLEMENTED | `compose.yaml` runs MongoDB & Redis; backend Dockerfile planned for Phase 8. |
 | Authentication | ✅ IMPLEMENTED | Registration, login, profile (`/auth/me`), password change (`/auth/password`), bcrypt hashing, JWT issuance and validation. |
 | Authorization | ✅ IMPLEMENTED | Role checks (`admin`, `manager`, `employee`), active account enforcement, team ownership, project scoping, task assignment eligibility, and activity visibility scoping. |
 | User management | ✅ IMPLEMENTED | Secured registration, bootstrap admin, user profile, password change, user status sync. |
 | Employee management | ✅ IMPLEMENTED | Full CRUD with response models and random password generation. |
 | Employee deactivation | ✅ IMPLEMENTED | Soft-deactivation with synchronized user account revocation. |
-| Team management | ✅ IMPLEMENTED | Full CRUD with partial updates, ownership authorization, and single-source-of-truth membership. |
-| Team member assignment | ✅ IMPLEMENTED | Atomic `$addToSet` member additions, `$pull` removals, duplicate conflict detection (409), and manager exclusion. |
-| Project management | ✅ IMPLEMENTED | Full CRUD with team association, date validation, manager dual-team authorization, and member visibility. |
-| Task management | ✅ IMPLEMENTED | Full CRUD with project association, priority/status workflow, filter parameters, and audit timestamps. |
+| Team management | ✅ IMPLEMENTED | Full CRUD with partial updates, ownership authorization, single-source-of-truth membership, and detail caching. |
+| Team member assignment | ✅ IMPLEMENTED | Atomic `$addToSet` member additions, `$pull` removals, duplicate conflict detection (409), manager exclusion, and cache invalidation. |
+| Project management | ✅ IMPLEMENTED | Full CRUD with team association, date validation, manager dual-team authorization, member visibility, and detail caching. |
+| Task management | ✅ IMPLEMENTED | Full CRUD with project association, priority/status workflow, filter parameters, audit timestamps, and detail caching. |
 | Task assignment | ✅ IMPLEMENTED | Dynamic assignee eligibility (must be manager or member of project team; inactive employee rejected with 403). |
 | Task status management | ✅ IMPLEMENTED | Standard status lifecycle (`todo`, `in_progress`, `completed`, `cancelled`). |
 | Task priorities | ✅ IMPLEMENTED | Task priority levels (`low`, `medium`, `high`, `urgent`). |
 | Comments | ✅ IMPLEMENTED | Task comments CRUD, author JWT binding, scoped permissions, and task deletion cascade. |
 | Activity / Audit Trail | ✅ IMPLEMENTED | Service-layer activity logging helper (`log_activity`), field change tracking, metadata sanitization, and scoped filtering. |
-| Dashboard | ❌ NOT IMPLEMENTED | Planned for Phase 6. |
-| Notifications | ❌ NOT IMPLEMENTED | Planned for Phase 6. |
+| Dashboard | ❌ NOT IMPLEMENTED | Planned for future phase. |
+| Notifications | ❌ NOT IMPLEMENTED | Planned for future phase. |
 | Flutter frontend | ❌ NOT IMPLEMENTED | Planned for Phase 7. |
 | API integration | ❌ NOT IMPLEMENTED | Planned for Phase 7. |
-| Testing | ✅ IMPLEMENTED | 33 automated unit and integration tests passing via pytest. |
+| Testing | ✅ IMPLEMENTED | 50 automated unit and integration tests passing via pytest. |
 | Documentation | ✅ IMPLEMENTED | `API.md`, `DATABASE.md`, `SETUP.md`, `DECISIONS.md`, `ERRORS.md`, `CHANGELOG.md`, and `AUDIT.md` fully updated. |
 
 ---
 
 ## 13. Current Issues and Technical Debt
 
-### 13.1 Phase 0, 1, 2, 3, 4 & 5 Resolved Issues
+### 13.1 Phase 0, 1, 2, 3, 4, 5 & 6 Resolved Issues
 
 1. ✅ **Privilege Escalation via Self-Registration:** Fixed in `app/schemas/user_schema.py` & `app/routes/auth.py`.
 2. ✅ **Hardcoded Initial Password:** Fixed in `app/core/security.py` & `app/routes/employees.py`.
@@ -323,14 +324,17 @@ volumes:
 8. ✅ **Missing Response Models:** Added explicit response schemas across all endpoints.
 9. ✅ **Missing User Profile & Password Change:** Implemented `GET /auth/me` and `PUT /auth/password`.
 10. ✅ **Strict Input Validation & Sanitization:** Enforced `extra="forbid"`, min length 8 on passwords, trimmed non-password strings, preserved exact password whitespace.
-11. ✅ **Missing Automated Tests:** Added pytest suite in `tests/` with 33 passing tests.
+11. ✅ **Redis Connection Resilience:** Fail-open `RedisManager` prevents startup crashes and runtime request failures when Redis is offline.
+12. ✅ **Rate Limiting Protection:** Added Redis fixed-window rate limiter on auth routes (5 req/60s).
+13. ✅ **Detail Endpoint Caching:** Added 300s TTL cache on `teams`, `projects`, `tasks` with exact key invalidation on write.
+14. ✅ **Missing Automated Tests:** Pytest suite contains 50 passing tests with full in-memory mocks.
 
 ---
 
 ## 14. Testing Status
 
 - **Framework:** Pytest 9.1.1 with pytest-asyncio and httpx.
-- **Suite Results:** 33 passed in ~26.5s.
+- **Suite Results:** 50 passed in ~32.5s.
 - **Coverage Highlights:**
   - Role security during public registration & first user bootstrap.
   - Login authentication, token issuance, and password validation.
@@ -357,7 +361,11 @@ volumes:
   - Cascade deletion: task deletion permanently removes task and cascade-deletes all associated comments.
   - Activity audit trail: logging on task creation, specific field modifications (`task_assigned_changed`, `task_status_changed`, `task_priority_changed`, `task_project_changed`), general updates (`task_updated`), task deletion (`task_deleted`), and comment operations (`comment_created`, `comment_updated`, `comment_deleted`).
   - Activity scoping: Admin sees all activities, Manager sees managed teams' activities, Employee sees visible tasks' activities.
-  - Server-managed audit fields (`created_by`, `created_at`, `updated_at`) with immutable field enforcement via `extra="forbid"`.
+  - Redis connection lifecycle: ping health checks, fail-open startup when Redis is down, graceful shutdown.
+  - Redis caching: cache miss populates Redis with 300s TTL and `_cached_at` timestamp, cache hit avoids database query, exact cache invalidation on team/project/task mutations, fail-open on Redis errors.
+  - Strict authorization before cache access: unauthorized users receive 403 Forbidden even if entity is cached.
+  - Redis rate limiting: 5 requests per 60-second window per client IP on `/auth/login`, `/auth/register`, `/auth/password`; 6th request triggers 429 Too Many Requests with `Retry-After` header; fail-open when Redis is unavailable.
+  - Data safety: verified no passwords, JWTs, or secrets in cached payloads or rate limit keys.
 
 ---
 
@@ -369,7 +377,7 @@ volumes:
 - **Phase 3:** ✅ Project Management *(Completed)*
 - **Phase 4:** ✅ Task Management & Workflows *(Completed)*
 - **Phase 5:** ✅ Comments & Activity Audit Trail *(Completed)*
-- **Phase 6:** Redis Caching & Rate Limiting
+- **Phase 6:** ✅ Redis Integration (Caching, Invalidation & Auth Rate Limiting) *(Completed)*
 - **Phase 7:** Flutter Frontend Application
 - **Phase 8:** Containerization & Production Packaging
 
@@ -377,4 +385,4 @@ volumes:
 
 ## 16. Audit Summary
 
-Phase 5 has successfully introduced Task Comments and a System Activity / Audit Trail. Comments are bound to tasks (`task_id`) and authors (`user_id` from JWT `sub`) with role-based editing/deletion permissions and automated cascade deletion upon task deletion. The Activity collection records state mutations across tasks and comments using an explicit service helper (`log_activity`), capturing specific field transitions (such as status, priority, assignment, and project reassignments) and sanitized metadata (with content previews capped at 100 characters and sensitive credentials strictly excluded). Historical activities are permanently preserved on entity deletion. Activity listing is protected by role-scoped visibility (Admins see all, Managers see managed teams, Employees see visible tasks) and supported by dedicated MongoDB indexes. All behaviors are verified by 33 automated test suites (120+ assertions) with 100% passing results.
+Phase 6 has successfully integrated Redis as a non-blocking optimization and security layer for TaskFlow. A centralized `RedisManager` manages connection pooling and health checks with fail-open resilience, guaranteeing that FastAPI starts and operates without failure even if Redis is offline. Detail endpoints (`GET /teams/{team_id}`, `GET /projects/{project_id}`, and `GET /tasks/{task_id}`) are cached using JSON serialization with a 300-second TTL and `_cached_at` timestamp, while mutation endpoints invalidate exact cache keys upon successful MongoDB writes. Entity authorization is strictly validated before cached data is returned. A fixed-window rate limiter (5 requests / 60 seconds per IP) protects authentication endpoints (`/auth/register`, `/auth/login`, `/auth/password`) with HTTP 429 and `Retry-After` headers while failing open if Redis is unavailable. All existing Phase 0–5 capabilities and new Phase 6 features are verified with 50 automated tests passing at 100%.

@@ -23,6 +23,7 @@ from app.services.team_service import (
     add_team_member,
     remove_team_member
 )
+from app.database.redis import cache_get, cache_set, cache_delete
 
 router = APIRouter(prefix="/teams", tags=["Teams"])
 
@@ -87,13 +88,15 @@ async def get_team(
     employee_collection=Depends(get_employee_collection),
     current_user=Depends(get_current_user),
 ):
-    team = await get_team_by_id(team_collection, team_id)
-
+    team = await cache_get(f"team:{team_id}")
     if not team:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Team not found"
-        )
+        team = await get_team_by_id(team_collection, team_id)
+        if not team:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Team not found"
+            )
+        await cache_set(f"team:{team_id}", team, ttl=300)
 
     if current_user.get("role") in ["admin", "manager"]:
         return team
@@ -135,7 +138,9 @@ async def edit_team(
 
     await check_team_management_permission(existing_team, current_user, employee_collection)
 
-    return await update_team(team_collection, employee_collection, team_id, team)
+    updated = await update_team(team_collection, employee_collection, team_id, team)
+    await cache_delete(f"team:{team_id}")
+    return updated
 
 
 @router.delete(
@@ -164,6 +169,7 @@ async def remove_team(
     await check_team_management_permission(existing_team, current_user, employee_collection)
 
     await delete_team(team_collection, team_id)
+    await cache_delete(f"team:{team_id}")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -193,12 +199,14 @@ async def assign_team_member(
 
     await check_team_management_permission(existing_team, current_user, employee_collection)
 
-    return await add_team_member(
+    result = await add_team_member(
         team_collection,
         employee_collection,
         team_id,
         member_data.employee_id
     )
+    await cache_delete(f"team:{team_id}")
+    return result
 
 
 @router.delete(
@@ -228,4 +236,5 @@ async def unassign_team_member(
     await check_team_management_permission(existing_team, current_user, employee_collection)
 
     await remove_team_member(team_collection, team_id, employee_id)
+    await cache_delete(f"team:{team_id}")
     return Response(status_code=status.HTTP_204_NO_CONTENT)

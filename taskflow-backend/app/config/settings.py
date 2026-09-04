@@ -8,7 +8,10 @@ class Settings(BaseSettings):
     mongodb_url: str = "mongodb://localhost:27017"
     mongodb_database: str = "taskflow"
 
-    redis_url: str = "redis://localhost:6379"
+    redis_url: str = "redis://localhost:6379/0"
+    redis_host: str | None = None
+    redis_port: int | None = None
+    redis_db: int | None = None
 
     jwt_secret: str = "supersecretkey"
     jwt_algorithm: str = "HS256"

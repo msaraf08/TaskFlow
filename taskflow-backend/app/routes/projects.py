@@ -22,6 +22,7 @@ from app.services.project_service import (
     delete_project,
     validate_team_exists
 )
+from app.database.redis import cache_get, cache_set, cache_delete
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
@@ -141,12 +142,15 @@ async def get_project(
     employee_collection=Depends(get_employee_collection),
     current_user=Depends(get_current_user),
 ):
-    project = await get_project_by_id(project_collection, project_id)
+    project = await cache_get(f"project:{project_id}")
     if not project:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Project not found"
-        )
+        project = await get_project_by_id(project_collection, project_id)
+        if not project:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project not found"
+            )
+        await cache_set(f"project:{project_id}", project, ttl=300)
 
     role = current_user.get("role")
     if role == "admin":
@@ -236,13 +240,15 @@ async def edit_project(
             employee_collection
         )
 
-    return await update_project(
+    updated = await update_project(
         project_collection,
         team_collection,
         project_id,
         project,
         existing_project
     )
+    await cache_delete(f"project:{project_id}")
+    return updated
 
 
 @router.delete(
@@ -277,4 +283,5 @@ async def remove_project(
     )
 
     await delete_project(project_collection, project_id)
+    await cache_delete(f"project:{project_id}")
     return Response(status_code=status.HTTP_204_NO_CONTENT)

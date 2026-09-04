@@ -27,6 +27,7 @@ from app.services.task_service import (
 )
 from app.services.activity_service import log_activity
 from app.services.comment_service import delete_comments_by_task_id
+from app.database.redis import cache_get, cache_set, cache_delete
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
@@ -198,12 +199,15 @@ async def get_task(
     employee_collection=Depends(get_employee_collection),
     current_user=Depends(get_current_user),
 ):
-    task = await get_task_by_id(task_collection, task_id)
+    task = await cache_get(f"task:{task_id}")
     if not task:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Task not found"
-        )
+        task = await get_task_by_id(task_collection, task_id)
+        if not task:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Task not found"
+            )
+        await cache_set(f"task:{task_id}", task, ttl=300)
 
     role = current_user.get("role")
     if role == "admin":
@@ -413,6 +417,8 @@ async def edit_task(
                 metadata={"title": updated_task.get("title")},
             )
 
+    await cache_delete(f"task:{task_id}")
+
     return updated_task
 
 
@@ -457,6 +463,7 @@ async def remove_task(
 
     await delete_task(task_collection, task_id)
     await delete_comments_by_task_id(comment_collection, task_id)
+    await cache_delete(f"task:{task_id}")
 
     await log_activity(
         activity_collection=activity_collection,

@@ -15,6 +15,7 @@ from app.database.dependencies import get_user_collection
 from app.core.security import hash_password, verify_password
 from app.core.jwt import create_access_token
 from app.core.dependencies import get_current_user
+from app.core.rate_limiter import rate_limit
 
 logger = logging.getLogger("taskflow.auth")
 
@@ -24,7 +25,8 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 @router.post(
     "/register",
     status_code=status.HTTP_201_CREATED,
-    response_model=UserRegisterResponseSchema
+    response_model=UserRegisterResponseSchema,
+    dependencies=[Depends(rate_limit("register"))]
 )
 async def register_user(
     user: UserCreateSchema,
@@ -68,7 +70,8 @@ async def register_user(
 
 @router.post(
     "/login",
-    response_model=TokenResponseSchema
+    response_model=TokenResponseSchema,
+    dependencies=[Depends(rate_limit("login"))]
 )
 async def login_user(
     user: UserLoginSchema,
@@ -126,7 +129,8 @@ async def get_current_user_profile(
 
 @router.put(
     "/password",
-    response_model=PasswordChangeResponseSchema
+    response_model=PasswordChangeResponseSchema,
+    dependencies=[Depends(rate_limit("password"))]
 )
 async def change_password(
     data: UserPasswordChangeSchema,
