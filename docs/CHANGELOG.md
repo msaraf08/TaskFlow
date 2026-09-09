@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.8.1 - Person-Name Resolution & Display Enrichment
+
+### Added
+- Backend response enrichment for Activity (`actor_name`), Comment (`author_name`), and Task (`assignee_name`) schemas with batch `$in` lookups to prevent N+1 queries.
+- Frontend model updates across `Activity`, `Comment`, and `Task` parsing server-enriched names.
+- Accessible UI rendering in `ActivityListScreen` displaying actor name and accessible Semantics (`"$actorName performed: <action>"`).
+- Accessible UI rendering in `CommentsSection` showing `"You"` for current user and `authorName` with `"Unknown User"` fallback (never generic `"User"`).
+- Accessible UI rendering in `TaskDetailScreen` displaying `assigneeName` with `"Unknown User"` fallback on missing profiles and `"Unassigned"` only on empty assignment.
+- Automated tests across backend (`test_comments_and_activities.py`) and Flutter (`models_test.dart`, `widget_test.dart`).
+
+## v0.8.0 - Phase 7: Flutter Frontend Application & Client Architecture
+
+### Added
+- Complete Flutter client application initialized in `taskflow-app/` with clean 6-layer architecture (`config/`, `core/`, `models/`, `providers/`, `screens/`, `widgets/`).
+- Centralized `ApiClient` with 10-second request timeout, Bearer token injection, query parameter mapping, auto-logout on HTTP 401, and typed exception mapping (`400`, `401`, `403`, `404`, `409`, `422`, `429`, `500+`).
+- Secure JWT credential storage (`SecureStorageService`) wrapping `flutter_secure_storage`.
+- Type-safe Dart models mapped to backend Pydantic schemas: `User`, `Employee`, `Team`, `Project`, `Task`, `Comment`, and `Activity`.
+- Reactive state management using `Provider` and `ChangeNotifier` across `AuthProvider`, `TeamProvider`, `ProjectProvider`, `TaskProvider`, and `ActivityProvider`.
+- Accessible design system with Material 3 theming (light/dark modes), non-color-only status badges (`StatusBadge`), priority badges (`PriorityBadge`), and 48x48 dp minimum touch targets.
+- Role-scoped UI screens for Authentication (`LoginScreen`, `RegisterScreen`), Dashboard (`DashboardScreen`), Teams (`TeamListScreen`, `TeamDetailScreen`, `TeamFormScreen`), Projects (`ProjectListScreen`, `ProjectDetailScreen`, `ProjectFormScreen`), Tasks (`TaskListScreen`, `TaskDetailScreen`, `TaskFormScreen`), Comments (`CommentsSection`), Activities (`ActivityListScreen`), and Profile (`ProfileScreen`, `ChangePasswordDialog`).
+- Frontend automated test suite with 20 passing unit and widget test cases.
+
 ## v0.7.0 - Phase 6: Redis Integration (Caching, Invalidation & Auth Rate Limiting)
 
 ### Added

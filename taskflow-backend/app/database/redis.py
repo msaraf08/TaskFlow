@@ -29,6 +29,7 @@ class RedisManager:
                     decode_responses=True,
                     socket_connect_timeout=1.0,
                     socket_timeout=1.0,
+                    protocol=2,
                 )
             else:
                 self.client = redis.from_url(

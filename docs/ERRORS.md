@@ -99,52 +99,42 @@ pip install bcrypt==4.3.0
 ### HTTP 404 Not Found
 - **Cause 1 (Project Not Found):** Specified `project_id` does not exist in the `projects` collection.
   - *Resolution:* Verify the project ID.
-- **Cause 2 (Referenced Team Not Found):** Specified `team_id` in project creation or update does not exist in `teams`.
-  - *Resolution:* Ensure the team exists before associating projects with it.
+- **Cause 2 (Team Not Found on Creation or Update):** Specified `team_id` does not exist in the `teams` collection.
+  - *Resolution:* Verify the team exists prior to attaching a project.
 
 ### HTTP 422 Unprocessable Entity
-- **Cause 1 (Invalid Date Range):** `start_date` is later than `end_date`.
-  - *Resolution:* Ensure `end_date` is greater than or equal to `start_date`.
-- **Cause 2 (Invalid Project Status):** `status` is not one of `planned`, `active`, `completed`, or `cancelled`.
-  - *Resolution:* Supply a valid status string.
-- **Cause 3 (Empty / Whitespace Project Name):** `name` is empty or consists solely of whitespace characters.
-  - *Resolution:* Provide a non-empty string between 1 and 120 characters.
-- **Cause 4 (Extra / Immutable Fields in Payload):** Attempted to send unmodeled or immutable fields (e.g. `created_by`, `created_at`).
-  - *Resolution:* Do not pass server-managed audit fields in request payloads.
+- **Cause 1 (Invalid Date Range):** Project `end_date` is earlier than `start_date`.
+  - *Resolution:* Ensure `end_date >= start_date`.
+- **Cause 2 (Invalid Project Status):** Provided `status` is not one of `planned`, `active`, `completed`, or `cancelled`.
+  - *Resolution:* Provide a valid status enum value.
 
 ---
 
 ## 5. Task Management Error Scenarios
 
 ### HTTP 400 Bad Request
-- **Cause 1 (Malformed ObjectId in Path or Body):** `task_id`, `project_id`, or `assigned_to` is not a valid 24-character hexadecimal string.
+- **Cause 1 (Malformed ObjectId in Path or Body):** `task_id`, `project_id`, or `assigned_to` is not a valid 24-character hexadecimal ObjectId.
   - *Resolution:* Provide valid 24-hex-character MongoDB ObjectIds.
 
 ### HTTP 403 Forbidden
-- **Cause 1 (Manager Managing Unassigned Project's Tasks):** Manager attempted to create, update, or delete a task on a project belonging to a team they do not manage.
-  - *Resolution:* Managers can only manage tasks within projects belonging to their own teams.
-- **Cause 2 (Assigned Employee Not Eligible):** Attempted to assign a task to an employee who is neither in `team.member_ids` nor matches `team.manager_id`.
-  - *Resolution:* Ensure assigned employees belong to the project team before assignment.
-- **Cause 3 (Assigned Employee Inactive):** Attempted to assign a task to an employee with `status: "inactive"`.
-  - *Resolution:* Reactivate the employee profile before assigning tasks.
-- **Cause 4 (Employee Updating Another Assignee's Task):** An employee attempted `PUT /tasks/{id}` on a task assigned to someone else.
-  - *Resolution:* Employees may only update their own assigned tasks.
-- **Cause 5 (Employee Deleting/Creating Task):** An employee attempted `POST /tasks/` or `DELETE /tasks/{id}`.
-  - *Resolution:* Task creation and deletion are restricted to Admins and Team Managers.
+- **Cause 1 (Ineligible Assignee):** Assigned employee is not a member of the project's team and not the team's manager.
+  - *Resolution:* Assign only active members or the manager of the team owning the project.
+- **Cause 2 (Manager Creating/Updating Task in Unmanaged Project):** Manager attempted to create or move a task in a project belonging to a team they do not manage.
+  - *Resolution:* Managers can only manage tasks within their own teams' projects.
+- **Cause 3 (Employee Modifying Unauthorized Fields):** Employee attempted to change `project_id` or `assigned_to` (returns 422).
+  - *Resolution:* Employees can only modify title, description, priority, status, and due date on their own assigned tasks.
 
 ### HTTP 404 Not Found
 - **Cause 1 (Task Not Found):** Specified `task_id` does not exist in `tasks`.
-  - *Resolution:* Verify the task ID.
-- **Cause 2 (Project, Team, or Employee Not Found):** Specified `project_id` or `assigned_to` does not exist in the database.
-  - *Resolution:* Verify entity existence prior to referencing in tasks.
+  - *Resolution:* Verify task ID.
+- **Cause 2 (Project or Assignee Not Found):** Specified `project_id` or `assigned_to` employee does not exist in the database.
+  - *Resolution:* Ensure project and employee records exist prior to task creation.
 
 ### HTTP 422 Unprocessable Entity
-- **Cause 1 (Employee Modifying Project or Assignee):** An employee included `project_id` or `assigned_to` in a task update payload.
-  - *Resolution:* Employees cannot reassign tasks or transfer projects. Strip these fields from the update payload.
-- **Cause 2 (Project Transfer Assignee Ineligible):** A manager moved a task to a project whose team does not include the current assignee as a member or manager.
-  - *Resolution:* Reassign the task to an eligible team member before or during the project transfer.
-- **Cause 3 (Invalid Enums / Empty Title):** `priority` is not in `[low, medium, high, urgent]`, `status` is not in `[todo, in_progress, completed, cancelled]`, or `title` is empty/whitespace.
-  - *Resolution:* Provide valid priority, status, and non-empty title strings.
+- **Cause 1 (Restricted Field Mutation by Employee):** Employee provided `project_id` or `assigned_to` in update payload.
+  - *Resolution:* Strip reassignment fields from employee update requests.
+- **Cause 2 (Invalid Status or Priority):** Provided status or priority does not match permitted enum values.
+  - *Resolution:* Use `todo`, `in_progress`, `completed`, `cancelled` for status, and `low`, `medium`, `high`, `urgent` for priority.
 
 ---
 
@@ -201,3 +191,31 @@ pip install bcrypt==4.3.0
 ### Redis Mutation Invalidation Failure
 - **Behavior:** If Redis encounters network errors or timeouts during cache deletion after a write, the error is caught and logged as a warning; the API operation succeeds normally without breaking client requests.
   - *Resolution:* Check Redis connectivity and system logs. Caches will automatically expire within 300 seconds (TTL).
+
+---
+
+## 9. Flutter Client & API Integration Error Scenarios
+
+### SocketException / Connection Refused
+- **Cause:** Flutter client is unable to reach the FastAPI backend server (e.g. backend not running, or Android emulator trying to connect to `127.0.0.1` instead of `10.0.2.2`).
+  - *Resolution:* Ensure backend is running via `uvicorn app.main:app --reload`. On Android emulator, launch with `--dart-define=API_BASE_URL=http://10.0.2.2:8000`.
+
+### UnauthorizedException / Auto-Logout (HTTP 401)
+- **Cause:** JWT token expired (30m lifetime) or user account deactivated.
+  - *Resolution:* The `ApiClient` triggers `onUnauthorized`, clearing stored tokens and returning the user to the Login screen with an expiration alert banner.
+
+### ValidationException (HTTP 422) in Form Submissions
+- **Cause:** Client submitted invalid data (e.g., end date earlier than start date, password shorter than 8 characters, or employee attempting to modify `assigned_to`).
+  - *Resolution:* The UI extracts the backend error message and displays it in an inline error banner or SnackBar without crashing.
+
+### RateLimitException (HTTP 429) on Login/Register
+- **Cause:** More than 5 auth requests in 60 seconds from the client.
+- **Resolution:** The UI displays a warning message indicating rate limit reached, prompting the user to wait before retrying.
+
+---
+
+## 10. Activity Stream & Task Mutation Logging
+
+### Duplicate or Unexpected Generic `task_updated` Action on Single-Field Edits
+- **Cause:** Form submissions that send the entire task schema (e.g. including `due_date`, `description`, etc.) caused false-positive dirty field detections due to type differences between Python `date`/`datetime` and MongoDB stored formats (`datetime.datetime` vs `datetime.date`), triggering `task_updated` instead of the specific field action (e.g. `task_priority_changed`).
+- **Resolution:** Task update comparison normalizes types (e.g. ISO date substring formatting, whitespace stripping, and None/empty string equivalence) across all mutable fields (`due_date`, `title`, `description`, `project_id`, `assigned_to`, `status`, `priority`) before evaluating changed fields count. Single-field modifications log only the specific action (`task_priority_changed`, `task_status_changed`, `task_assigned_changed`, `task_project_changed`), multi-field modifications log `task_updated`, and zero-change submissions log no new activity.

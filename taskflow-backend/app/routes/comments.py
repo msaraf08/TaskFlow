@@ -8,6 +8,7 @@ from app.database.dependencies import (
     get_project_collection,
     get_team_collection,
     get_employee_collection,
+    get_user_collection,
     get_activity_collection,
 )
 from app.schemas.comment_schema import (
@@ -96,6 +97,7 @@ async def add_comment(
     project_collection=Depends(get_project_collection),
     team_collection=Depends(get_team_collection),
     employee_collection=Depends(get_employee_collection),
+    user_collection=Depends(get_user_collection),
     activity_collection=Depends(get_activity_collection),
     current_user=Depends(get_current_user),
 ):
@@ -113,6 +115,7 @@ async def add_comment(
         task_id,
         current_user["user_id"],
         comment_in,
+        user_collection=user_collection,
     )
 
     await log_activity(
@@ -125,6 +128,7 @@ async def add_comment(
         project_id=task["project_id"],
         team_id=str(team["_id"]),
         metadata={"content_preview": comment_in.content[:100]},
+        user_collection=user_collection,
     )
 
     return created_comment
@@ -143,6 +147,7 @@ async def list_comments(
     project_collection=Depends(get_project_collection),
     team_collection=Depends(get_team_collection),
     employee_collection=Depends(get_employee_collection),
+    user_collection=Depends(get_user_collection),
     current_user=Depends(get_current_user),
 ):
     await _authorize_task_view(
@@ -159,6 +164,7 @@ async def list_comments(
         task_id,
         skip=skip,
         limit=limit,
+        user_collection=user_collection,
     )
 
 
@@ -174,10 +180,11 @@ async def edit_comment(
     project_collection=Depends(get_project_collection),
     team_collection=Depends(get_team_collection),
     employee_collection=Depends(get_employee_collection),
+    user_collection=Depends(get_user_collection),
     activity_collection=Depends(get_activity_collection),
     current_user=Depends(get_current_user),
 ):
-    comment = await get_comment_by_id(comment_collection, comment_id)
+    comment = await get_comment_by_id(comment_collection, comment_id, user_collection=user_collection)
     if not comment:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -213,7 +220,7 @@ async def edit_comment(
                 detail="You do not have permission to edit comments for this team's tasks",
             )
 
-    updated = await update_comment(comment_collection, comment_id, comment_in)
+    updated = await update_comment(comment_collection, comment_id, comment_in, user_collection=user_collection)
 
     await log_activity(
         activity_collection=activity_collection,
@@ -225,6 +232,7 @@ async def edit_comment(
         project_id=task["project_id"],
         team_id=str(team["_id"]),
         metadata={"content_preview": comment_in.content[:100]},
+        user_collection=user_collection,
     )
 
     return updated

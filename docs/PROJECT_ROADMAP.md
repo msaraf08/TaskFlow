@@ -37,8 +37,11 @@
 - [x] Fail-Open Resilience
 
 ## Sprint 8: Flutter Integration
-- [ ] Flutter Frontend App & State Management
-- [ ] Backend API Integration
+- [x] Flutter Frontend App & State Management (`Provider`)
+- [x] Backend API Integration (`ApiClient` + typed exceptions)
+- [x] Role-scoped UI (Admin, Manager, Employee)
+- [x] Non-color-only Accessibility Badges & Material 3 Theming
+- [x] Automated Unit & Widget Test Suite (20 tests passing)
 
 ## Sprint 9: Production Packaging & Deployment
 - [ ] Backend Containerization & Production Configuration

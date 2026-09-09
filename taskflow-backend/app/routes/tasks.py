@@ -1,3 +1,4 @@
+from datetime import date, datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
@@ -8,6 +9,7 @@ from app.database.dependencies import (
     get_project_collection,
     get_team_collection,
     get_employee_collection,
+    get_user_collection,
     get_comment_collection,
     get_activity_collection,
 )
@@ -43,6 +45,7 @@ async def add_task(
     project_collection=Depends(get_project_collection),
     team_collection=Depends(get_team_collection),
     employee_collection=Depends(get_employee_collection),
+    user_collection=Depends(get_user_collection),
     activity_collection=Depends(get_activity_collection),
     current_user=Depends(require_roles("admin", "manager")),
 ):
@@ -66,7 +69,8 @@ async def add_task(
         team_collection,
         employee_collection,
         task,
-        current_user["user_id"]
+        current_user["user_id"],
+        user_collection=user_collection,
     )
 
     await log_activity(
@@ -95,12 +99,19 @@ async def list_tasks(
     project_collection=Depends(get_project_collection),
     team_collection=Depends(get_team_collection),
     employee_collection=Depends(get_employee_collection),
+    user_collection=Depends(get_user_collection),
     current_user=Depends(get_current_user),
 ):
     role = current_user.get("role")
 
     if role == "admin":
-        return await get_all_tasks(task_collection, project_id=project_id, assigned_to=assigned_to)
+        return await get_all_tasks(
+            task_collection,
+            project_id=project_id,
+            assigned_to=assigned_to,
+            employee_collection=employee_collection,
+            user_collection=user_collection,
+        )
 
     emp = await employee_collection.find_one({"user_id": current_user["user_id"]})
     if not emp:
@@ -135,7 +146,12 @@ async def list_tasks(
         if assigned_to:
             filter_query["assigned_to"] = assigned_to
 
-        return await get_tasks_by_filter(task_collection, filter_query)
+        return await get_tasks_by_filter(
+            task_collection,
+            filter_query,
+            employee_collection=employee_collection,
+            user_collection=user_collection,
+        )
 
     # Regular employee: assigned tasks OR tasks belonging to member team projects
     cursor = team_collection.find({"member_ids": emp_id})
@@ -184,7 +200,12 @@ async def list_tasks(
                     return []
                 filter_query["project_id"] = project_id
 
-    return await get_tasks_by_filter(task_collection, filter_query)
+    return await get_tasks_by_filter(
+        task_collection,
+        filter_query,
+        employee_collection=employee_collection,
+        user_collection=user_collection,
+    )
 
 
 @router.get(
@@ -197,11 +218,17 @@ async def get_task(
     project_collection=Depends(get_project_collection),
     team_collection=Depends(get_team_collection),
     employee_collection=Depends(get_employee_collection),
+    user_collection=Depends(get_user_collection),
     current_user=Depends(get_current_user),
 ):
     task = await cache_get(f"task:{task_id}")
     if not task:
-        task = await get_task_by_id(task_collection, task_id)
+        task = await get_task_by_id(
+            task_collection,
+            task_id,
+            employee_collection=employee_collection,
+            user_collection=user_collection,
+        )
         if not task:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -257,10 +284,16 @@ async def edit_task(
     project_collection=Depends(get_project_collection),
     team_collection=Depends(get_team_collection),
     employee_collection=Depends(get_employee_collection),
+    user_collection=Depends(get_user_collection),
     activity_collection=Depends(get_activity_collection),
     current_user=Depends(get_current_user),
 ):
-    existing_task = await get_task_by_id(task_collection, task_id)
+    existing_task = await get_task_by_id(
+        task_collection,
+        task_id,
+        employee_collection=employee_collection,
+        user_collection=user_collection,
+    )
     if not existing_task:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -324,7 +357,8 @@ async def edit_task(
         task,
         existing_task,
         current_project,
-        current_team
+        current_team,
+        user_collection=user_collection,
     )
 
     update_dict = {
@@ -343,8 +377,33 @@ async def edit_task(
             )
             final_team_id = str(final_team["_id"])
 
-        if len(update_dict) == 1:
-            if "assigned_to" in update_dict and update_dict["assigned_to"] != existing_task.get("assigned_to"):
+        task_title = updated_task.get("title", existing_task.get("title"))
+
+        def _is_task_field_changed(field_name: str, old_val, new_val) -> bool:
+            if field_name == "due_date":
+                def to_date_str(val):
+                    if val is None:
+                        return None
+                    if isinstance(val, (datetime, date)):
+                        return val.strftime("%Y-%m-%d")
+                    return str(val)[:10]
+                return to_date_str(old_val) != to_date_str(new_val)
+            elif field_name == "description":
+                return (old_val or "") != (new_val or "")
+            elif field_name in ("project_id", "assigned_to"):
+                return str(old_val or "") != str(new_val or "")
+            elif field_name in ("title", "priority", "status"):
+                return str(old_val or "").strip() != str(new_val or "").strip()
+            return old_val != new_val
+
+        changed_fields = [
+            k for k, v in update_dict.items()
+            if _is_task_field_changed(k, existing_task.get(k), v)
+        ]
+
+        if len(changed_fields) == 1:
+            field = changed_fields[0]
+            if field == "assigned_to":
                 await log_activity(
                     activity_collection=activity_collection,
                     actor_user_id=current_user["user_id"],
@@ -354,9 +413,13 @@ async def edit_task(
                     task_id=task_id,
                     project_id=updated_task.get("project_id"),
                     team_id=final_team_id,
-                    metadata={"old_value": existing_task.get("assigned_to"), "new_value": str(update_dict["assigned_to"])},
+                    metadata={
+                        "title": task_title,
+                        "old_value": existing_task.get("assigned_to"),
+                        "new_value": str(update_dict["assigned_to"]),
+                    },
                 )
-            elif "status" in update_dict and update_dict["status"] != existing_task.get("status"):
+            elif field == "status":
                 await log_activity(
                     activity_collection=activity_collection,
                     actor_user_id=current_user["user_id"],
@@ -366,9 +429,13 @@ async def edit_task(
                     task_id=task_id,
                     project_id=updated_task.get("project_id"),
                     team_id=final_team_id,
-                    metadata={"old_value": existing_task.get("status"), "new_value": str(update_dict["status"])},
+                    metadata={
+                        "title": task_title,
+                        "old_value": existing_task.get("status"),
+                        "new_value": str(update_dict["status"]),
+                    },
                 )
-            elif "priority" in update_dict and update_dict["priority"] != existing_task.get("priority"):
+            elif field == "priority":
                 await log_activity(
                     activity_collection=activity_collection,
                     actor_user_id=current_user["user_id"],
@@ -378,9 +445,13 @@ async def edit_task(
                     task_id=task_id,
                     project_id=updated_task.get("project_id"),
                     team_id=final_team_id,
-                    metadata={"old_value": existing_task.get("priority"), "new_value": str(update_dict["priority"])},
+                    metadata={
+                        "title": task_title,
+                        "old_value": existing_task.get("priority"),
+                        "new_value": str(update_dict["priority"]),
+                    },
                 )
-            elif "project_id" in update_dict and update_dict["project_id"] != existing_task.get("project_id"):
+            elif field == "project_id":
                 await log_activity(
                     activity_collection=activity_collection,
                     actor_user_id=current_user["user_id"],
@@ -390,7 +461,11 @@ async def edit_task(
                     task_id=task_id,
                     project_id=updated_task.get("project_id"),
                     team_id=final_team_id,
-                    metadata={"old_value": existing_task.get("project_id"), "new_value": str(update_dict["project_id"])},
+                    metadata={
+                        "title": task_title,
+                        "old_value": existing_task.get("project_id"),
+                        "new_value": str(update_dict["project_id"]),
+                    },
                 )
             else:
                 await log_activity(
@@ -402,9 +477,9 @@ async def edit_task(
                     task_id=task_id,
                     project_id=updated_task.get("project_id"),
                     team_id=final_team_id,
-                    metadata={"title": updated_task.get("title")},
+                    metadata={"title": task_title},
                 )
-        else:
+        elif len(changed_fields) > 1:
             await log_activity(
                 activity_collection=activity_collection,
                 actor_user_id=current_user["user_id"],
@@ -414,7 +489,7 @@ async def edit_task(
                 task_id=task_id,
                 project_id=updated_task.get("project_id"),
                 team_id=final_team_id,
-                metadata={"title": updated_task.get("title")},
+                metadata={"title": task_title},
             )
 
     await cache_delete(f"task:{task_id}")

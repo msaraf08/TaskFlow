@@ -34,10 +34,11 @@ class TestRedisConnectionAndLifecycle:
     async def test_fastapi_starts_when_redis_unavailable(self, monkeypatch):
         mgr = RedisManager()
         # Mock connect to throw exception
-        def mock_from_url(*args, **kwargs):
+        def mock_unavailable(*args, **kwargs):
             raise ConnectionError("Redis server unreachable")
 
-        monkeypatch.setattr("redis.asyncio.from_url", mock_from_url)
+        monkeypatch.setattr("redis.asyncio.from_url", mock_unavailable)
+        monkeypatch.setattr("redis.asyncio.Redis", mock_unavailable)
         await mgr.connect()
         assert mgr.client is None
         assert await mgr.ping() is False

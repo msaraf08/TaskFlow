@@ -5,8 +5,8 @@
 - Python 3.13
 - Docker Desktop
 - Git
-- VS Code
-- Flutter SDK (for mobile/web client development)
+- VS Code / Android Studio
+- Flutter SDK (3.x / Dart 3.x)
 
 ---
 
@@ -16,6 +16,11 @@ Run MongoDB and Redis via Docker Compose:
 
 ```bash
 docker compose up -d
+```
+
+Verify services are healthy:
+```bash
+docker compose ps
 ```
 
 ---
@@ -58,23 +63,63 @@ Copy template to create local configuration:
 cp .env.example .env
 ```
 
----
-
-## 3. Run Development Server
+### Run Backend Server
 
 ```bash
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Interactive API documentation (Swagger UI) is available at:
 `http://localhost:8000/docs`
 
----
-
-## 4. Run Automated Tests
-
-Execute the pytest suite:
+### Run Backend Tests
 
 ```powershell
 pytest -v
+```
+
+---
+
+## 3. Flutter Frontend Setup
+
+Navigate to `taskflow-app`:
+
+### Install Dependencies
+
+```bash
+cd taskflow-app
+flutter pub get
+```
+
+### Run Automated Tests
+
+Execute the Flutter unit and widget test suite:
+
+```bash
+flutter test
+```
+
+### Run Frontend Application
+
+**Run on Chrome / Web:**
+```bash
+flutter run -d chrome
+```
+
+**Run on Windows Desktop:**
+```bash
+flutter run -d windows
+```
+
+**Run on Connected Mobile Device / Emulator:**
+```bash
+flutter run
+```
+
+### Customizing Backend URL
+
+By default, the client connects to `http://127.0.0.1:8000`. You can override this at launch:
+
+```bash
+flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8000  # For Android Emulator
 ```

@@ -9,6 +9,7 @@ async def create_comment(
     task_id: str,
     user_id: str,
     comment_data: CommentCreateSchema,
+    user_collection=None,
 ) -> dict:
     now = datetime.now(timezone.utc)
     doc = {
@@ -21,6 +22,19 @@ async def create_comment(
     result = await comment_collection.insert_one(doc)
     doc["id"] = str(result.inserted_id)
     doc["_id"] = str(result.inserted_id)
+
+    if user_collection is not None and user_id:
+        try:
+            u = await user_collection.find_one(
+                {"_id": validate_object_id(user_id)},
+                {"_id": 1, "name": 1}
+            )
+            doc["author_name"] = u.get("name", "Unknown User") if u else "Unknown User"
+        except Exception:
+            doc["author_name"] = "Unknown User"
+    else:
+        doc["author_name"] = "Unknown User"
+
     return doc
 
 
@@ -29,6 +43,7 @@ async def get_comments_by_task(
     task_id: str,
     skip: int = 0,
     limit: int = 20,
+    user_collection=None,
 ) -> List[dict]:
     comments = []
     cursor = (
@@ -41,15 +56,57 @@ async def get_comments_by_task(
         c["id"] = str(c["_id"])
         c["_id"] = str(c["_id"])
         comments.append(c)
+
+    if user_collection is not None and comments:
+        user_ids = {c["user_id"] for c in comments if c.get("user_id")}
+        user_obj_ids = []
+        for uid in user_ids:
+            try:
+                user_obj_ids.append(validate_object_id(uid))
+            except Exception:
+                pass
+
+        name_map = {}
+        if user_obj_ids:
+            u_cursor = user_collection.find(
+                {"_id": {"$in": user_obj_ids}},
+                {"_id": 1, "name": 1}
+            )
+            async for u in u_cursor:
+                name_map[str(u["_id"])] = u.get("name", "Unknown User")
+
+        for c in comments:
+            uid = c.get("user_id")
+            c["author_name"] = name_map.get(uid, "Unknown User") if uid else "Unknown User"
+    else:
+        for c in comments:
+            if "author_name" not in c:
+                c["author_name"] = "Unknown User"
+
     return comments
 
 
-async def get_comment_by_id(comment_collection, comment_id: str) -> Optional[dict]:
+async def get_comment_by_id(
+    comment_collection,
+    comment_id: str,
+    user_collection=None,
+) -> Optional[dict]:
     obj_id = validate_object_id(comment_id)
     comment = await comment_collection.find_one({"_id": obj_id})
     if comment:
         comment["id"] = str(comment["_id"])
         comment["_id"] = str(comment["_id"])
+        if user_collection is not None and comment.get("user_id"):
+            try:
+                u = await user_collection.find_one(
+                    {"_id": validate_object_id(comment["user_id"])},
+                    {"_id": 1, "name": 1}
+                )
+                comment["author_name"] = u.get("name", "Unknown User") if u else "Unknown User"
+            except Exception:
+                comment["author_name"] = "Unknown User"
+        else:
+            comment["author_name"] = "Unknown User"
     return comment
 
 
@@ -57,6 +114,7 @@ async def update_comment(
     comment_collection,
     comment_id: str,
     comment_data: CommentUpdateSchema,
+    user_collection=None,
 ) -> Optional[dict]:
     obj_id = validate_object_id(comment_id)
     now = datetime.now(timezone.utc)
@@ -64,7 +122,7 @@ async def update_comment(
         {"_id": obj_id},
         {"$set": {"content": comment_data.content, "updated_at": now}}
     )
-    return await get_comment_by_id(comment_collection, comment_id)
+    return await get_comment_by_id(comment_collection, comment_id, user_collection=user_collection)
 
 
 async def delete_comment(comment_collection, comment_id: str) -> bool:

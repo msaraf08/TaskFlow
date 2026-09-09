@@ -8,6 +8,7 @@ from app.database.dependencies import (
     get_project_collection,
     get_team_collection,
     get_employee_collection,
+    get_user_collection,
 )
 from app.schemas.activity_schema import (
     ActivityAction,
@@ -38,6 +39,7 @@ async def list_activities(
     project_collection=Depends(get_project_collection),
     team_collection=Depends(get_team_collection),
     employee_collection=Depends(get_employee_collection),
+    user_collection=Depends(get_user_collection),
     current_user=Depends(get_current_user),
 ):
     # Validate IDs if provided
@@ -84,6 +86,7 @@ async def list_activities(
             filter_query,
             skip=skip,
             limit=limit,
+            user_collection=user_collection,
         )
 
     emp = await employee_collection.find_one({"user_id": current_user["user_id"]})
@@ -119,9 +122,10 @@ async def list_activities(
             filter_query,
             skip=skip,
             limit=limit,
+            user_collection=user_collection,
         )
 
-    # Role is employee: visible tasks only
+    # Role is employee: visible tasks (assigned to employee OR in projects of member teams)
     cursor = team_collection.find({"member_ids": emp_id})
     member_team_ids = []
     async for t in cursor:
@@ -133,18 +137,17 @@ async def list_activities(
         async for p in p_cursor:
             member_project_ids.append(str(p["_id"]))
 
-    # Find tasks assigned to employee OR in member projects
     if member_project_ids:
-        t_filter = {
+        task_query = {
             "$or": [
                 {"assigned_to": emp_id},
                 {"project_id": {"$in": member_project_ids}},
             ]
         }
     else:
-        t_filter = {"assigned_to": emp_id}
+        task_query = {"assigned_to": emp_id}
 
-    t_cursor = task_collection.find(t_filter)
+    t_cursor = task_collection.find(task_query, {"_id": 1})
     visible_task_ids = []
     async for t in t_cursor:
         visible_task_ids.append(str(t["_id"]))
@@ -169,4 +172,5 @@ async def list_activities(
         filter_query,
         skip=skip,
         limit=limit,
+        user_collection=user_collection,
     )

@@ -56,6 +56,7 @@ class TaskResponseSchema(BaseModel):
     description: Optional[str] = None
     project_id: str
     assigned_to: str
+    assignee_name: Optional[str] = None
     priority: str
     status: str
     due_date: date

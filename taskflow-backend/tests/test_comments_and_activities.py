@@ -332,6 +332,7 @@ async def test_activity_logging_and_filtering(
         headers=m1_h,
         json={
             "title": "Audit Trail Task",
+            "description": "Task for auditing changes",
             "project_id": data["p1_id"],
             "assigned_to": data["e1_emp_id"],
             "priority": "low",
@@ -415,3 +416,296 @@ async def test_activity_logging_and_filtering(
 
     bad_entity = await client.get("/activities/?entity_type=invalid_ent", headers=admin_h)
     assert bad_entity.status_code == 422
+
+    # Count existing task_updated activities before single-field priority change
+    pre_up_acts = await client.get(f"/activities/?task_id={task_id}&action=task_updated", headers=admin_h)
+    assert pre_up_acts.status_code == 200
+    pre_up_count = len(pre_up_acts.json())
+
+    # 13. Full-payload form update (including identical due_date) changes only priority (from urgent to low)
+    full_update_resp = await client.put(
+        f"/tasks/{task_id}",
+        headers=m1_h,
+        json={
+            "title": "Audit Trail Task",
+            "description": "Task for auditing changes",
+            "project_id": data["p3_id"],
+            "assigned_to": data["e1_emp_id"],
+            "priority": "low",
+            "status": "in_progress",
+            "due_date": "2026-10-01",
+        },
+    )
+    assert full_update_resp.status_code == 200
+
+    prio_acts = await client.get(f"/activities/?task_id={task_id}&action=task_priority_changed", headers=admin_h)
+    assert prio_acts.status_code == 200
+    prio_list = prio_acts.json()
+    assert len(prio_list) == 2  # first urgent, now low
+    latest_prio = prio_list[0]
+    assert latest_prio["actor_user_id"] == data["m1_user_id"]
+    assert latest_prio["metadata"]["old_value"] == "urgent"
+    assert latest_prio["metadata"]["new_value"] == "low"
+    assert latest_prio["metadata"]["title"] == "Audit Trail Task"
+
+    # Verify task_updated was NOT logged for single-field priority change
+    post_up_acts = await client.get(f"/activities/?task_id={task_id}&action=task_updated", headers=admin_h)
+    assert post_up_acts.status_code == 200
+    assert len(post_up_acts.json()) == pre_up_count
+
+    # 14. Zero-field change submission produces no new activity
+    all_acts_pre_noop = await client.get(f"/activities/?task_id={task_id}", headers=admin_h)
+    noop_resp = await client.put(
+        f"/tasks/{task_id}",
+        headers=m1_h,
+        json={
+            "title": "Audit Trail Task",
+            "description": "Task for auditing changes",
+            "project_id": data["p3_id"],
+            "assigned_to": data["e1_emp_id"],
+            "priority": "low",
+            "status": "in_progress",
+            "due_date": "2026-10-01",
+        },
+    )
+    assert noop_resp.status_code == 200
+    all_acts_post_noop = await client.get(f"/activities/?task_id={task_id}", headers=admin_h)
+    assert len(all_acts_post_noop.json()) == len(all_acts_pre_noop.json())
+
+    # 15. Multi-field update in one call logs task_updated
+    multi_resp = await client.put(
+        f"/tasks/{task_id}",
+        headers=m1_h,
+        json={
+            "title": "Multi Field Updated Title",
+            "priority": "urgent",
+        },
+    )
+    assert multi_resp.status_code == 200
+    multi_acts = await client.get(f"/activities/?task_id={task_id}&action=task_updated", headers=admin_h)
+    assert multi_acts.status_code == 200
+    assert len(multi_acts.json()) == pre_up_count + 1
+    assert multi_acts.json()[0]["metadata"]["title"] == "Multi Field Updated Title"
+
+
+@pytest.mark.asyncio
+async def test_employee_activity_visibility_scoping(
+    client: AsyncClient,
+    mock_users_collection,
+    mock_employees_collection,
+    mock_teams_collection,
+    mock_projects_collection,
+    mock_tasks_collection,
+):
+    data = await setup_task_test_data(
+        mock_users_collection,
+        mock_employees_collection,
+        mock_teams_collection,
+        mock_projects_collection,
+    )
+
+    admin_h = {"Authorization": f"Bearer {data['admin_token']}"}
+    m1_h = {"Authorization": f"Bearer {data['m1_token']}"}
+    e1_h = {"Authorization": f"Bearer {data['e1_token']}"}
+    e2_h = {"Authorization": f"Bearer {data['e2_token']}"}
+
+    # 1. Manager creates Task A in Team 1 project (P1) assigned to Employee 1 (E1)
+    t1_resp = await client.post(
+        "/tasks/",
+        headers=m1_h,
+        json={
+            "title": "Task Assigned to E1",
+            "description": "E1 Task",
+            "project_id": data["p1_id"],
+            "assigned_to": data["e1_emp_id"],
+            "priority": "medium",
+            "status": "todo",
+            "due_date": "2026-10-01",
+        },
+    )
+    assert t1_resp.status_code == 201
+    t1_id = t1_resp.json()["id"]
+
+    # 2. Manager creates Task B in Team 1 project (P1) assigned to Manager 1 (M1)
+    t2_resp = await client.post(
+        "/tasks/",
+        headers=m1_h,
+        json={
+            "title": "Task Assigned to Manager",
+            "description": "Manager Task",
+            "project_id": data["p1_id"],
+            "assigned_to": data["m1_emp_id"],
+            "priority": "high",
+            "status": "todo",
+            "due_date": "2026-10-01",
+        },
+    )
+    assert t2_resp.status_code == 201
+    t2_id = t2_resp.json()["id"]
+
+    # 3. Manager 2 creates Task C in Team 2 project (P2) assigned to Employee 2 (E2)
+    t3_resp = await client.post(
+        "/tasks/",
+        headers=admin_h,
+        json={
+            "title": "Task Assigned to E2",
+            "description": "E2 Task",
+            "project_id": data["p2_id"],
+            "assigned_to": data["e2_emp_id"],
+            "priority": "low",
+            "status": "todo",
+            "due_date": "2026-10-01",
+        },
+    )
+    assert t3_resp.status_code == 201
+    t3_id = t3_resp.json()["id"]
+
+    # Status changes on all 3 tasks
+    await client.put(f"/tasks/{t1_id}", headers=e1_h, json={"status": "in_progress"})
+    await client.put(f"/tasks/{t2_id}", headers=m1_h, json={"status": "in_progress"})
+    await client.put(f"/tasks/{t3_id}", headers=e2_h, json={"status": "in_progress"})
+
+    # Comments on all 3 tasks
+    await client.post(f"/tasks/{t1_id}/comments", headers=e1_h, json={"content": "E1 comment on Task 1"})
+    await client.post(f"/tasks/{t2_id}/comments", headers=m1_h, json={"content": "Manager comment on Task 2"})
+    await client.post(f"/tasks/{t3_id}/comments", headers=e2_h, json={"content": "E2 comment on Task 3"})
+
+    # Verify Admin sees all activities
+    admin_acts = await client.get("/activities/", headers=admin_h)
+    assert admin_acts.status_code == 200
+    admin_task_ids = {a.get("task_id") for a in admin_acts.json() if a.get("task_id")}
+    assert t1_id in admin_task_ids
+    assert t2_id in admin_task_ids
+    assert t3_id in admin_task_ids
+
+    # Verify Manager 1 sees all activities for managed Team 1 (Tasks 1 & 2), but not Team 2 (Task 3)
+    m1_acts = await client.get("/activities/", headers=m1_h)
+    assert m1_acts.status_code == 200
+    m1_task_ids = {a.get("task_id") for a in m1_acts.json() if a.get("task_id")}
+    assert t1_id in m1_task_ids
+    assert t2_id in m1_task_ids
+    assert t3_id not in m1_task_ids
+
+    # Verify Employee 1 (member of Team 1) sees activities for visible Team 1 tasks (Tasks 1 and 2), but NOT Team 2 (Task 3)
+    e1_acts = await client.get("/activities/", headers=e1_h)
+    assert e1_acts.status_code == 200
+    e1_list = e1_acts.json()
+    assert len(e1_list) > 0
+    e1_task_ids = {a.get("task_id") for a in e1_list if a.get("task_id")}
+    assert t1_id in e1_task_ids
+    assert t2_id in e1_task_ids
+    assert t3_id not in e1_task_ids
+
+    # Verify Employee 2 (member of Team 2) sees activities for Task 3, but NOT Team 1 tasks (Tasks 1 and 2)
+    e2_acts = await client.get("/activities/", headers=e2_h)
+    assert e2_acts.status_code == 200
+    e2_list = e2_acts.json()
+    assert len(e2_list) > 0
+    e2_task_ids = {a.get("task_id") for a in e2_list if a.get("task_id")}
+    assert t3_id in e2_task_ids
+    assert t1_id not in e2_task_ids
+    assert t2_id not in e2_task_ids
+
+    # Specific task_id query by E1 for inaccessible Task 3 -> empty list
+    e1_unassigned_query = await client.get(f"/activities/?task_id={t3_id}", headers=e1_h)
+    assert e1_unassigned_query.status_code == 200
+    assert len(e1_unassigned_query.json()) == 0
+
+
+@pytest.mark.asyncio
+async def test_name_enrichment_across_apis(
+    client: AsyncClient,
+    mock_users_collection,
+    mock_employees_collection,
+    mock_teams_collection,
+    mock_projects_collection,
+    mock_tasks_collection,
+    mock_comments_collection,
+    mock_activities_collection,
+):
+    data = await setup_task_test_data(
+        mock_users_collection,
+        mock_employees_collection,
+        mock_teams_collection,
+        mock_projects_collection,
+    )
+
+    admin_h = {"Authorization": f"Bearer {data['admin_token']}"}
+    m1_h = {"Authorization": f"Bearer {data['m1_token']}"}
+    e1_h = {"Authorization": f"Bearer {data['e1_token']}"}
+
+    # 1. Create task - verify assignee_name is enriched with employee's name
+    task_resp = await client.post(
+        "/tasks/",
+        headers=m1_h,
+        json={
+            "title": "Task with enriched assignee",
+            "description": "Checking name enrichment",
+            "project_id": data["p1_id"],
+            "assigned_to": data["e1_emp_id"],
+            "priority": "medium",
+            "status": "todo",
+            "due_date": "2026-10-01",
+        },
+    )
+    assert task_resp.status_code == 201
+    task_data = task_resp.json()
+    assert task_data["assignee_name"] == "Employee One"
+    task_id = task_data["id"]
+
+    # 2. Get task by ID - verify assignee_name
+    get_task_resp = await client.get(f"/tasks/{task_id}", headers=admin_h)
+    assert get_task_resp.status_code == 200
+    assert get_task_resp.json()["assignee_name"] == "Employee One"
+
+    # 3. List tasks - verify assignee_name
+    list_tasks_resp = await client.get("/tasks/", headers=admin_h)
+    assert list_tasks_resp.status_code == 200
+    matched = [t for t in list_tasks_resp.json() if t["id"] == task_id]
+    assert len(matched) == 1
+    assert matched[0]["assignee_name"] == "Employee One"
+
+    # 4. Update task - verify assignee_name on updated task
+    update_task_resp = await client.put(
+        f"/tasks/{task_id}",
+        headers=m1_h,
+        json={"assigned_to": data["m1_emp_id"]},
+    )
+    assert update_task_resp.status_code == 200
+    assert update_task_resp.json()["assignee_name"] == "Manager One"
+
+    # 5. Create comment - verify author_name is enriched with user's name
+    c_resp = await client.post(
+        f"/tasks/{task_id}/comments",
+        headers=e1_h,
+        json={"content": "Enriched comment author"},
+    )
+    assert c_resp.status_code == 201
+    c_data = c_resp.json()
+    assert c_data["author_name"] == "Employee One"
+    comment_id = c_data["id"]
+
+    # 6. List comments - verify author_name
+    list_c_resp = await client.get(f"/tasks/{task_id}/comments", headers=admin_h)
+    assert list_c_resp.status_code == 200
+    c_list = list_c_resp.json()
+    assert len(c_list) >= 1
+    assert c_list[0]["author_name"] == "Employee One"
+
+    # 7. Update comment - verify author_name
+    up_c_resp = await client.put(
+        f"/comments/{comment_id}",
+        headers=e1_h,
+        json={"content": "Updated content author test"},
+    )
+    assert up_c_resp.status_code == 200
+    assert up_c_resp.json()["author_name"] == "Employee One"
+
+    # 8. List activities - verify actor_name is enriched across activity records
+    act_resp = await client.get(f"/activities/?task_id={task_id}", headers=admin_h)
+    assert act_resp.status_code == 200
+    activities = act_resp.json()
+    assert len(activities) >= 1
+    for act in activities:
+        assert act["actor_name"] in ("Manager One", "Employee One", "Admin User")
+

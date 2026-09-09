@@ -182,7 +182,7 @@
 
 ## Decision 031: Centralized Fail-Open Redis Manager Architecture
 - **Context:** Redis serves as an optimization and supporting service. Network partitions, startup timing, or Redis downtime should not bring down the application.
-- **Decision:** Implement a centralized singleton `RedisManager` in `app/database/redis.py` that connects with a 1.0-second socket timeout and catches connection failures at startup and runtime. If Redis is unavailable, the application logs a warning and transparently fails open to MongoDB.
+- **Decision:** Implement a singleton `RedisManager` in `app/database/redis.py` that connects with a 1.0-second socket timeout and catches connection failures at startup and runtime. If Redis is unavailable, the application logs a warning and transparently fails open to MongoDB.
 
 ---
 
@@ -199,7 +199,7 @@
 ---
 
 ## Decision 034: JSON Serialization with ISO Timestamping for Cache Values
-- **Context:** Cached data must be easily inspectable, portable, and secure against deserialization exploits.
+- **Context:** Cached data must be easily inspectable, practical, and secure against deserialization exploits.
 - **Decision:** Use standard `json.dumps()` and `json.loads()` with ISO 8601 datetime strings. Binary serializers such as `pickle` or `msgpack` are strictly prohibited. Every cached entity includes a `_cached_at` timestamp.
 
 ---
@@ -207,3 +207,51 @@
 ## Decision 035: Fixed-Window Redis Rate Limiting on Authentication Endpoints
 - **Context:** Authentication endpoints require protection against brute-force and credential stuffing attacks without introducing heavy third-party dependencies.
 - **Decision:** Implement a lightweight, dependency-injected fixed-window rate limiter (5 requests / 60 seconds per client IP) using Redis atomic `INCR` and `EXPIRE`. When exceeded, return `HTTP 429 Too Many Requests` with a `Retry-After` header. If Redis is offline, fail open to avoid locking out legitimate users.
+
+---
+
+## Decision 036: Flutter Client Architecture and Package Structure
+- **Context:** The frontend needs a maintainable, clean architecture without premature enterprise bloat.
+- **Decision:** Organize `taskflow-app/` into 6 core layers: `config/`, `core/`, `models/`, `providers/`, `screens/`, and `widgets/`. Avoid unnecessary domain/use-case layers for the MVP.
+
+---
+
+## Decision 037: Provider + ChangeNotifier for State Management
+- **Context:** Needed a reactive state management solution that integrates seamlessly with Flutter without excessive boilerplate (e.g., BloC) or external code generation dependencies.
+- **Decision:** Use `package:provider` with `ChangeNotifier` across distinct domain providers (`AuthProvider`, `TeamProvider`, `ProjectProvider`, `TaskProvider`, `ActivityProvider`).
+
+---
+
+## Decision 038: Centralized ApiClient with Typed HTTP Exceptions and 401 Interceptor
+- **Context:** Client API operations need standard timeouts, Bearer token injection, query parameter formatting, error decoding, and automatic logout upon token expiry.
+- **Decision:** Implement a centralized `ApiClient` in `lib/core/api_client.dart` with a 10-second timeout, typed exception mapping (`400`, `401`, `403`, `404`, `409`, `422`, `429`, `500+`), and an `onUnauthorized` callback to automatically reset application state and navigate to the login screen.
+
+---
+
+## Decision 039: Secure JWT Storage via flutter_secure_storage
+- **Context:** Storing JWT tokens in unencrypted local storage (like `shared_preferences`) exposes authentication credentials to extraction.
+- **Decision:** Use `flutter_secure_storage` to persist `auth_token` in platform-native encrypted keychains/keystores with in-memory fallback.
+
+---
+
+## Decision 040: Non-Color-Only Accessibility Badges
+- **Context:** Accessibility guidelines require that status, priority, and critical information must not rely solely on color cues.
+- **Decision:** Implement `StatusBadge` and `PriorityBadge` combining unique iconography, text labels, and color coding. Form controls adhere to WCAG minimum 48x48 dp touch targets.
+
+---
+
+## Decision 041: Strict Client-Side Validation Mirroring Backend Schemas
+- **Context:** Preventing unnecessary roundtrips and providing instant user feedback while ensuring compliance with backend Pydantic constraints.
+- **Decision:** Implement `Validators` utility class matching backend rules (e.g., email regex, 8+ char password, non-empty names, date sequence verification).
+
+---
+
+## Decision 042: Frontend Role-Scoped UI with Authoritative Backend RBAC
+- **Context:** UI elements (create buttons, edit/delete actions, team assignment options) should only appear when relevant to the user's role, but the client must never be trusted as the security authority.
+- **Decision:** Conditionally render management UI controls based on the logged-in user's role while relying on the backend API as the final authoritative security gate, catching and displaying backend `403 Forbidden` and `422 Unprocessable Entity` errors clearly.
+
+---
+
+## Decision 043: CORSMiddleware Configuration for Flutter Web Integration
+- **Context:** Flutter Web development on localhost / 127.0.0.1 sends cross-origin `OPTIONS` preflight requests for authenticated mutation endpoints (`/auth/register`, `/auth/login`, etc.) requiring permissive local CORS handling without compromising production origin security.
+- **Decision:** Configure `fastapi.middleware.cors.CORSMiddleware` in `app/main.py` using `cors_origins` list and `cors_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"`, enabling `allow_credentials=True`, methods `["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"]`, and explicit/wildcard request headers. This allows dynamic Flutter Web ephemeral debugging ports on localhost/127.0.0.1 while strictly rejecting untrusted origins.

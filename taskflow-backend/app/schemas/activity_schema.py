@@ -53,6 +53,7 @@ def sanitize_metadata(meta: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]
 class ActivityResponseSchema(BaseModel):
     id: str
     actor_user_id: str
+    actor_name: Optional[str] = None
     action: str
     entity_type: str
     entity_id: str

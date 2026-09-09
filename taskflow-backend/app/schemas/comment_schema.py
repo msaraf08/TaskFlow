@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -38,6 +39,7 @@ class CommentResponseSchema(BaseModel):
     id: str
     task_id: str
     user_id: str
+    author_name: Optional[str] = None
     content: str
     created_at: datetime
     updated_at: datetime

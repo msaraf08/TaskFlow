@@ -446,6 +446,7 @@ Tokens are validated against cryptographic signatures, expiration time, and acti
     "description": "Implement JWT endpoints",
     "project_id": "6a99d4398a5cbc1907f06fa1",
     "assigned_to": "6a99d4398a5cbc1907f06f9c",
+    "assignee_name": "Jane Smith",
     "priority": "high",
     "status": "todo",
     "due_date": "2026-09-20",
@@ -529,6 +530,7 @@ Tokens are validated against cryptographic signatures, expiration time, and acti
     "id": "6a99d4398a5cbc1907f06fc1",
     "task_id": "6a99d4398a5cbc1907f06fb1",
     "user_id": "6a99d4398a5cbc1907f06f9a",
+    "author_name": "John Doe",
     "content": "Implemented user authentication and wrote unit tests.",
     "created_at": "2026-09-04T16:00:00.000Z",
     "updated_at": "2026-09-04T16:00:00.000Z"
@@ -600,13 +602,14 @@ Tokens are validated against cryptographic signatures, expiration time, and acti
 - **Access & Scoping:**
   - Admin: Sees all activities.
   - Manager: Sees activities where `team_id` matches a team they manage.
-  - Employee: Sees activities for tasks visible to them (assigned to them or in a project of a team where they are a member). Activities without a visible `task_id` are not accessible to employees.
+  - Employee: Sees activity strictly for tasks currently assigned to the logged-in employee (`task.assigned_to == employee.id`). General team membership alone does not grant activity visibility on other users' or managers' tasks. Activities without a task assigned to the employee are not accessible.
 - **Response `200 OK`:** Array of `ActivityResponseSchema` sorted by `created_at` descending:
   ```json
   [
     {
       "id": "6a99d4398a5cbc1907f06fd1",
       "actor_user_id": "6a99d4398a5cbc1907f06f9a",
+      "actor_name": "John Doe",
       "action": "task_status_changed",
       "entity_type": "task",
       "entity_id": "6a99d4398a5cbc1907f06fb1",

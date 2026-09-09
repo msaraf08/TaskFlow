@@ -74,11 +74,11 @@ class InMemoryAsyncCollection:
             if k == "$or":
                 if not any(self._matches(doc, subquery) for subquery in v):
                     return False
-            elif k == "_id":
-                if doc.get("_id") != v:
-                    return False
             elif isinstance(v, dict) and "$in" in v:
                 if doc.get(k) not in v["$in"]:
+                    return False
+            elif k == "_id":
+                if doc.get("_id") != v:
                     return False
             elif isinstance(doc.get(k), list) and not isinstance(v, list):
                 if v not in doc[k]:
@@ -87,15 +87,28 @@ class InMemoryAsyncCollection:
                 return False
         return True
 
+    def _apply_projection(self, doc: Dict[str, Any], projection: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        res = copy.deepcopy(doc)
+        if not projection:
+            return res
+        has_inclusion = any(pv == 1 for pk, pv in projection.items() if pk != "_id")
+        if has_inclusion:
+            projected = {}
+            if projection.get("_id", 1) != 0 and "_id" in res:
+                projected["_id"] = res["_id"]
+            for pk, pv in projection.items():
+                if pv == 1 and pk in res:
+                    projected[pk] = res[pk]
+            return projected
+        for pk, pv in projection.items():
+            if pv == 0 and pk in res:
+                del res[pk]
+        return res
+
     async def find_one(self, query: Dict[str, Any], projection: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         for d in self.docs:
             if self._matches(d, query):
-                res = copy.deepcopy(d)
-                if projection:
-                    for pk, pv in projection.items():
-                        if pv == 0 and pk in res:
-                            del res[pk]
-                return res
+                return self._apply_projection(d, projection)
         return None
 
     def find(self, query: Optional[Dict[str, Any]] = None, projection: Optional[Dict[str, Any]] = None) -> InMemoryAsyncCursor:
@@ -104,12 +117,7 @@ class InMemoryAsyncCollection:
         matched = []
         for d in self.docs:
             if self._matches(d, query):
-                res = copy.deepcopy(d)
-                if projection:
-                    for pk, pv in projection.items():
-                        if pv == 0 and pk in res:
-                            del res[pk]
-                matched.append(res)
+                matched.append(self._apply_projection(d, projection))
         return InMemoryAsyncCursor(matched)
 
     async def insert_one(self, doc: Dict[str, Any]) -> InsertResult:

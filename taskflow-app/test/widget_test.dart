@@ -1,0 +1,1597 @@
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:provider/provider.dart';
+import 'package:taskflow/core/api_client.dart';
+import 'package:taskflow/core/secure_storage.dart';
+import 'package:taskflow/models/project.dart';
+import 'package:taskflow/models/task.dart';
+import 'package:taskflow/models/user.dart';
+import 'package:taskflow/providers/activity_provider.dart';
+import 'package:taskflow/providers/auth_provider.dart';
+import 'package:taskflow/providers/project_provider.dart';
+import 'package:taskflow/providers/task_provider.dart';
+import 'package:taskflow/providers/team_provider.dart';
+import 'package:taskflow/screens/activities/activity_list_screen.dart';
+import 'package:taskflow/screens/auth/login_screen.dart';
+import 'package:taskflow/screens/auth/register_screen.dart';
+import 'package:taskflow/screens/dashboard/dashboard_screen.dart';
+import 'package:taskflow/screens/projects/project_detail_screen.dart';
+import 'package:taskflow/screens/projects/project_list_screen.dart';
+import 'package:taskflow/screens/tasks/task_detail_screen.dart';
+import 'package:taskflow/screens/tasks/task_form_screen.dart';
+import 'package:taskflow/screens/tasks/task_list_screen.dart';
+import 'package:taskflow/screens/teams/team_detail_screen.dart';
+import 'package:taskflow/screens/teams/team_form_screen.dart';
+import 'package:taskflow/widgets/app_empty_state.dart';
+import 'package:taskflow/widgets/app_error_widget.dart';
+import 'package:taskflow/widgets/confirmation_dialog.dart';
+import 'package:taskflow/widgets/priority_badge.dart';
+import 'package:taskflow/widgets/status_badge.dart';
+
+void main() {
+  group('Widget Tests Suite', () {
+    testWidgets(
+      'StatusBadge renders correct icon and text for project and task statuses',
+      (tester) async {
+        await tester.pumpWidget(
+          const MaterialApp(
+            home: Scaffold(
+              body: Column(
+                children: [
+                  StatusBadge(status: ProjectStatus.active),
+                  StatusBadge(status: TaskStatus.inProgress),
+                  StatusBadge(status: TaskStatus.completed),
+                ],
+              ),
+            ),
+          ),
+        );
+
+        expect(find.text('Active'), findsOneWidget);
+        expect(find.text('In Progress'), findsOneWidget);
+        expect(find.text('Completed'), findsOneWidget);
+        expect(find.byIcon(Icons.play_circle_outline), findsOneWidget);
+        expect(find.byIcon(Icons.autorenew), findsOneWidget);
+        expect(find.byIcon(Icons.check_circle_outline), findsOneWidget);
+      },
+    );
+
+    testWidgets('PriorityBadge renders icon and text for all priority levels', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: Column(
+              children: [
+                PriorityBadge(priority: TaskPriority.low),
+                PriorityBadge(priority: TaskPriority.medium),
+                PriorityBadge(priority: TaskPriority.high),
+                PriorityBadge(priority: TaskPriority.urgent),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Low'), findsOneWidget);
+      expect(find.text('Medium'), findsOneWidget);
+      expect(find.text('High'), findsOneWidget);
+      expect(find.text('Urgent'), findsOneWidget);
+    });
+
+    testWidgets('AppEmptyState displays title, message, and executes action', (
+      tester,
+    ) async {
+      bool actionTriggered = false;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AppEmptyState(
+              icon: Icons.inbox,
+              title: 'Empty Inbox',
+              message: 'You have no new messages at this time.',
+              actionLabel: 'Refresh',
+              onAction: () {
+                actionTriggered = true;
+              },
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Empty Inbox'), findsOneWidget);
+      expect(
+        find.text('You have no new messages at this time.'),
+        findsOneWidget,
+      );
+      expect(find.text('Refresh'), findsOneWidget);
+
+      await tester.tap(find.text('Refresh'));
+      await tester.pump();
+      expect(actionTriggered, isTrue);
+    });
+
+    testWidgets('AppErrorWidget displays error message and retries on press', (
+      tester,
+    ) async {
+      bool retryTriggered = false;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AppErrorWidget(
+              message: 'Failed to connect to backend service',
+              onRetry: () {
+                retryTriggered = true;
+              },
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Failed to connect to backend service'), findsOneWidget);
+      expect(find.text('Retry'), findsOneWidget);
+
+      await tester.tap(find.text('Retry'));
+      await tester.pump();
+      expect(retryTriggered, isTrue);
+    });
+
+    testWidgets('ConfirmationDialog shows title and actions', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: ConfirmationDialog(
+              title: 'Delete Item',
+              content: 'Are you sure you want to delete this item?',
+              confirmLabel: 'Delete',
+              isDestructive: true,
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Delete Item'), findsOneWidget);
+      expect(
+        find.text('Are you sure you want to delete this item?'),
+        findsOneWidget,
+      );
+      expect(find.text('Delete'), findsOneWidget);
+      expect(find.text('Cancel'), findsOneWidget);
+    });
+
+    testWidgets(
+      'LoginScreen renders inputs and shows validation errors on empty submit',
+      (tester) async {
+        final fakeStorage = SecureStorageService();
+        final fakeClient = ApiClient(storage: fakeStorage);
+        final authProv = AuthProvider(client: fakeClient, storage: fakeStorage);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: ChangeNotifierProvider<AuthProvider>.value(
+              value: authProv,
+              child: const LoginScreen(),
+            ),
+          ),
+        );
+
+        expect(find.text('TaskFlow'), findsOneWidget);
+        expect(find.text('Sign In'), findsOneWidget);
+
+        // Tap Sign In without filling form
+        await tester.tap(find.text('Sign In'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Email is required'), findsOneWidget);
+        expect(find.text('Password is required'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'RegisterScreen renders inputs without role selector and shows validation errors on empty submit',
+      (tester) async {
+        final fakeStorage = SecureStorageService();
+        final fakeClient = ApiClient(storage: fakeStorage);
+        final authProv = AuthProvider(client: fakeClient, storage: fakeStorage);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: ChangeNotifierProvider<AuthProvider>.value(
+              value: authProv,
+              child: const RegisterScreen(),
+            ),
+          ),
+        );
+
+        expect(find.text('Join TaskFlow'), findsOneWidget);
+        expect(find.text('Create Account'), findsNWidgets(2));
+        expect(find.text('Full Name'), findsOneWidget);
+        expect(find.text('Email Address'), findsOneWidget);
+        expect(find.text('Password'), findsOneWidget);
+        // Ensure no Role selector is rendered
+        expect(find.text('Role'), findsNothing);
+        expect(find.text('Employee'), findsNothing);
+        expect(find.text('Manager'), findsNothing);
+        expect(find.text('Admin'), findsNothing);
+
+        // Tap Create Account button without filling form
+        await tester.tap(find.widgetWithText(FilledButton, 'Create Account'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Name is required'), findsOneWidget);
+        expect(find.text('Email is required'), findsOneWidget);
+        expect(find.text('Password is required'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'DashboardScreen renders user name, role, email, and avatar initial correctly',
+      (tester) async {
+        FlutterSecureStorage.setMockInitialValues({
+          'auth_token': 'fake_jwt_token',
+        });
+
+        final mockHttpClient = MockClient((request) async {
+          if (request.url.path.contains('activities')) {
+            return http.Response(
+              jsonEncode({'activities': [], 'total': 0, 'skip': 0, 'limit': 5}),
+              200,
+            );
+          }
+          return http.Response(jsonEncode([]), 200);
+        });
+        final fakeStorage = SecureStorageService();
+        final fakeClient = ApiClient(
+          client: mockHttpClient,
+          storage: fakeStorage,
+        );
+        final authProv = AuthProvider(client: fakeClient, storage: fakeStorage);
+        final teamProv = TeamProvider(apiClient: fakeClient);
+        final projProv = ProjectProvider(apiClient: fakeClient);
+        final taskProv = TaskProvider(apiClient: fakeClient);
+        final actProv = ActivityProvider(apiClient: fakeClient);
+
+        // Simulate logged in user
+        final testUser = User(
+          id: '65f1a2b3c4d5e6f7a8b9c0d1',
+          name: 'Main Manager',
+          email: 'manager@example.com',
+          role: UserRole.manager,
+          status: 'active',
+        );
+        authProv.setUserForTesting(testUser);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: MultiProvider(
+              providers: [
+                ChangeNotifierProvider<AuthProvider>.value(value: authProv),
+                ChangeNotifierProvider<TeamProvider>.value(value: teamProv),
+                ChangeNotifierProvider<ProjectProvider>.value(value: projProv),
+                ChangeNotifierProvider<TaskProvider>.value(value: taskProv),
+                ChangeNotifierProvider<ActivityProvider>.value(value: actProv),
+              ],
+              child: const DashboardScreen(),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Dashboard'), findsOneWidget);
+        expect(find.text('Welcome back, Main Manager!'), findsOneWidget);
+        expect(
+          find.text('Role: Manager | manager@example.com'),
+          findsOneWidget,
+        );
+        expect(find.text('M'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'TeamFormScreen only permits admin or manager roles as Team Manager, excluding employee-role users',
+      (tester) async {
+        final fakeStorage = SecureStorageService();
+        final mockHttpClient = MockClient((request) async {
+          if (request.url.path == '/employees') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'emp_admin_1',
+                  'name': 'Raj Admin',
+                  'email': 'raj@test.com',
+                  'role': 'admin',
+                  'status': 'active',
+                },
+                {
+                  'id': 'emp_mgr_1',
+                  'name': 'Amit Manager',
+                  'email': 'amit@taskflow.com',
+                  'role': 'manager',
+                  'status': 'active',
+                },
+                {
+                  'id': 'emp_emp_1',
+                  'name': 'Neha Employee',
+                  'email': 'neha@taskflow.com',
+                  'role': 'employee',
+                  'status': 'active',
+                },
+              ]),
+              200,
+            );
+          }
+          return http.Response(jsonEncode([]), 200);
+        });
+
+        final fakeClient = ApiClient(
+          client: mockHttpClient,
+          storage: fakeStorage,
+        );
+        final teamProv = TeamProvider(apiClient: fakeClient);
+        await teamProv.fetchEmployees();
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: ChangeNotifierProvider<TeamProvider>.value(
+              value: teamProv,
+              child: const TeamFormScreen(),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Check Team Name and Description fields
+        expect(find.text('Team Name'), findsOneWidget);
+        expect(find.text('Description'), findsOneWidget);
+        expect(find.text('Team Manager'), findsOneWidget);
+
+        // All employees should be in the initial team members list
+        expect(find.text('Neha Employee'), findsOneWidget);
+        expect(find.text('Raj Admin'), findsOneWidget);
+        expect(find.text('Amit Manager'), findsOneWidget);
+
+        // Open Team Manager dropdown
+        await tester.tap(find.byType(DropdownButtonFormField<String>));
+        await tester.pumpAndSettle();
+
+        // Eligible managers (admin & manager) must appear in dropdown
+        expect(find.text('Raj Admin (ADMIN - raj@test.com)'), findsWidgets);
+        expect(
+          find.text('Amit Manager (MANAGER - amit@taskflow.com)'),
+          findsWidgets,
+        );
+
+        // Employee-role user Neha must NOT appear in Team Manager dropdown options
+        expect(
+          find.text('Neha Employee (EMPLOYEE - neha@taskflow.com)'),
+          findsNothing,
+        );
+      },
+    );
+
+    test(
+      'TeamProvider.createTeam does not send member_ids in POST /teams and adds members sequentially',
+      () async {
+        final List<Map<String, dynamic>> requestsMade = [];
+
+        final mockHttpClient = MockClient((request) async {
+          final body = request.body.isNotEmpty
+              ? jsonDecode(request.body) as Map<String, dynamic>
+              : <String, dynamic>{};
+          requestsMade.add({
+            'method': request.method,
+            'path': request.url.path,
+            'body': body,
+          });
+
+          if (request.method == 'POST' && request.url.path == '/teams') {
+            return http.Response(
+              jsonEncode({
+                'id': 'team_123',
+                'name': body['name'],
+                'description': body['description'],
+                'manager_id': body['manager_id'],
+                'member_ids': [],
+              }),
+              201,
+            );
+          }
+
+          if (request.method == 'POST' &&
+              request.url.path == '/teams/team_123/members') {
+            return http.Response(
+              jsonEncode({
+                'id': 'team_123',
+                'name': 'Engineering',
+                'description': 'Core dev team',
+                'manager_id': 'emp_admin_1',
+                'member_ids': [body['employee_id']],
+              }),
+              200,
+            );
+          }
+
+          return http.Response(jsonEncode([]), 200);
+        });
+
+        final fakeStorage = SecureStorageService();
+        final fakeClient = ApiClient(
+          client: mockHttpClient,
+          storage: fakeStorage,
+        );
+        final teamProv = TeamProvider(apiClient: fakeClient);
+
+        final createdTeam = await teamProv.createTeam(
+          name: 'Engineering',
+          description: 'Core dev team',
+          managerId: 'emp_admin_1',
+          memberIds: ['emp_emp_1'],
+        );
+
+        // Verify team was created and member was assigned
+        expect(createdTeam.id, 'team_123');
+        expect(createdTeam.memberIds, contains('emp_emp_1'));
+
+        // 1. Verify first request was POST /teams and did NOT contain member_ids
+        expect(requestsMade[0]['method'], 'POST');
+        expect(requestsMade[0]['path'], '/teams');
+        expect(requestsMade[0]['body']['name'], 'Engineering');
+        expect(requestsMade[0]['body']['manager_id'], 'emp_admin_1');
+        expect(requestsMade[0]['body'].containsKey('member_ids'), isFalse);
+
+        // 2. Verify second request was POST /teams/team_123/members
+        expect(requestsMade[1]['method'], 'POST');
+        expect(requestsMade[1]['path'], '/teams/team_123/members');
+        expect(requestsMade[1]['body'], {'employee_id': 'emp_emp_1'});
+      },
+    );
+
+    test('ProjectProvider.getProject sends GET /projects/{id}', () async {
+      String? requestedPath;
+      final mockHttpClient = MockClient((request) async {
+        requestedPath = request.url.path;
+        return http.Response(
+          jsonEncode({
+            'id': 'proj_999',
+            'name': 'Test Project',
+            'description': 'Description',
+            'team_id': 'team_1',
+            'status': 'active',
+            'created_at': '2026-01-01T00:00:00.000Z',
+          }),
+          200,
+        );
+      });
+
+      final fakeStorage = SecureStorageService();
+      final fakeClient = ApiClient(
+        client: mockHttpClient,
+        storage: fakeStorage,
+      );
+      final projProv = ProjectProvider(apiClient: fakeClient);
+
+      final project = await projProv.getProject('proj_999');
+      expect(project.id, 'proj_999');
+      expect(requestedPath, '/projects/proj_999');
+    });
+
+    testWidgets(
+      'ProjectDetailScreen renders project details and tasks correctly',
+      (tester) async {
+        final mockHttpClient = MockClient((request) async {
+          if (request.url.path == '/projects/proj_999') {
+            return http.Response(
+              jsonEncode({
+                'id': 'proj_999',
+                'name': 'TaskFlow Mobile App',
+                'description': 'Mobile Flutter App development',
+                'team_id': 'team_1',
+                'status': 'active',
+                'start_date': '2026-01-01',
+                'end_date': '2026-06-30',
+                'created_at': '2026-01-01T00:00:00.000Z',
+              }),
+              200,
+            );
+          }
+          if (request.url.path == '/tasks') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'task_1',
+                  'title': 'Implement Auth Screen',
+                  'description': 'Flutter UI for Auth',
+                  'project_id': 'proj_999',
+                  'assigned_to': 'emp_1',
+                  'priority': 'high',
+                  'status': 'in_progress',
+                  'due_date': '2026-02-01',
+                  'created_at': '2026-01-01T00:00:00.000Z',
+                },
+              ]),
+              200,
+            );
+          }
+          if (request.url.path == '/teams') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'team_1',
+                  'name': 'Core Engineering',
+                  'description': 'Dev Team',
+                  'manager_id': 'emp_mgr_1',
+                  'member_ids': ['emp_1'],
+                },
+              ]),
+              200,
+            );
+          }
+          return http.Response(jsonEncode([]), 200);
+        });
+
+        final fakeStorage = SecureStorageService();
+        final fakeClient = ApiClient(
+          client: mockHttpClient,
+          storage: fakeStorage,
+        );
+        final authProv = AuthProvider(
+          apiClient: fakeClient,
+          storage: fakeStorage,
+        );
+        final projProv = ProjectProvider(apiClient: fakeClient);
+        final taskProv = TaskProvider(apiClient: fakeClient);
+        final teamProv = TeamProvider(apiClient: fakeClient);
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: authProv),
+              ChangeNotifierProvider.value(value: projProv),
+              ChangeNotifierProvider.value(value: taskProv),
+              ChangeNotifierProvider.value(value: teamProv),
+            ],
+            child: const MaterialApp(
+              home: ProjectDetailScreen(projectId: 'proj_999'),
+            ),
+          ),
+        );
+
+        await tester.pumpAndSettle();
+
+        expect(find.text('TaskFlow Mobile App'), findsWidgets);
+        expect(find.text('Mobile Flutter App development'), findsOneWidget);
+        expect(find.text('Core Engineering'), findsOneWidget);
+        expect(find.text('2026-01-01 to 2026-06-30'), findsOneWidget);
+        expect(find.text('Tasks (1)'), findsOneWidget);
+        expect(find.text('Implement Auth Screen'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'TaskFormScreen renders Assigned To dropdown with employee name, role, and email',
+      (tester) async {
+        final mockHttpClient = MockClient((request) async {
+          if (request.url.path == '/employees') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'emp_neha_1',
+                  'user_id': 'user_neha_1',
+                  'name': 'Neha',
+                  'email': 'neha@flow.com',
+                  'role': 'employee',
+                  'department': 'Engineering',
+                  'status': 'active',
+                },
+                {
+                  'id': 'emp_amit_2',
+                  'user_id': 'user_amit_2',
+                  'name': 'Amit Sharma',
+                  'email': 'amit@taskflow.com',
+                  'role': 'manager',
+                  'department': 'Engineering',
+                  'status': 'active',
+                },
+                {
+                  'id': 'emp_raj_3',
+                  'user_id': 'user_raj_3',
+                  'name': 'Raj',
+                  'email': 'raj@test.com',
+                  'role': 'admin',
+                  'department': 'Management',
+                  'status': 'active',
+                },
+              ]),
+              200,
+            );
+          }
+          if (request.url.path == '/projects') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'proj_1',
+                  'name': 'TaskFlow Web',
+                  'description': 'Web Application',
+                  'team_id': 'team_1',
+                  'status': 'active',
+                },
+              ]),
+              200,
+            );
+          }
+          return http.Response(jsonEncode([]), 200);
+        });
+
+        final fakeStorage = SecureStorageService();
+        final fakeClient = ApiClient(
+          client: mockHttpClient,
+          storage: fakeStorage,
+        );
+        final authProv = AuthProvider(
+          apiClient: fakeClient,
+          storage: fakeStorage,
+        );
+        final projProv = ProjectProvider(apiClient: fakeClient);
+        final taskProv = TaskProvider(apiClient: fakeClient);
+        final teamProv = TeamProvider(apiClient: fakeClient);
+
+        // Preload projects and employees
+        await projProv.fetchProjects();
+        await teamProv.fetchEmployees();
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: authProv),
+              ChangeNotifierProvider.value(value: projProv),
+              ChangeNotifierProvider.value(value: taskProv),
+              ChangeNotifierProvider.value(value: teamProv),
+            ],
+            child: const MaterialApp(home: TaskFormScreen()),
+          ),
+        );
+
+        await tester.pumpAndSettle();
+
+        // Initial selected value rendered in the dropdown
+        expect(find.text('Neha (EMPLOYEE - neha@flow.com)'), findsOneWidget);
+
+        // Open the Assigned To dropdown
+        await tester.tap(find.text('Neha (EMPLOYEE - neha@flow.com)'));
+        await tester.pumpAndSettle();
+
+        // Verify all employee options are rendered with the required format
+        expect(find.text('Neha (EMPLOYEE - neha@flow.com)'), findsWidgets);
+        expect(
+          find.text('Amit Sharma (MANAGER - amit@taskflow.com)'),
+          findsOneWidget,
+        );
+        expect(find.text('Raj (ADMIN - raj@test.com)'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'ActivityListScreen displays Entity, Action, and resolved Task title',
+      (tester) async {
+        final mockHttpClient = MockClient((request) async {
+          if (request.url.path == '/activities') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'act_1',
+                  'actor_user_id': 'user_amit_1',
+                  'actor_name': 'Amit Sharma',
+                  'action': 'task_priority_changed',
+                  'entity_type': 'task',
+                  'entity_id': 'task_auth_123',
+                  'task_id': 'task_auth_123',
+                  'metadata': {'old_value': 'high', 'new_value': 'low'},
+                  'created_at': '2026-09-07T10:30:00Z',
+                },
+                {
+                  'id': 'act_2',
+                  'actor_user_id': 'user_amit_1',
+                  'actor_name': 'Amit Sharma',
+                  'action': 'task_status_changed',
+                  'entity_type': 'task',
+                  'entity_id': 'task_auth_123',
+                  'task_id': 'task_auth_123',
+                  'metadata': {
+                    'title': 'Implement User Authentication',
+                    'old_value': 'todo',
+                    'new_value': 'in_progress',
+                  },
+                  'created_at': '2026-09-07T11:00:00Z',
+                },
+              ]),
+              200,
+            );
+          }
+          if (request.url.path == '/tasks') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'task_auth_123',
+                  'title': 'Implement User Authentication',
+                  'description': 'Auth Flow',
+                  'project_id': 'proj_1',
+                  'assigned_to': 'emp_1',
+                  'priority': 'low',
+                  'status': 'in_progress',
+                  'created_at': '2026-09-01T00:00:00Z',
+                },
+              ]),
+              200,
+            );
+          }
+          return http.Response(jsonEncode([]), 200);
+        });
+
+        final fakeStorage = SecureStorageService();
+        final fakeClient = ApiClient(
+          client: mockHttpClient,
+          storage: fakeStorage,
+        );
+        final authProv = AuthProvider(
+          apiClient: fakeClient,
+          storage: fakeStorage,
+        );
+        final actProv = ActivityProvider(apiClient: fakeClient);
+        final taskProv = TaskProvider(apiClient: fakeClient);
+        final projProv = ProjectProvider(apiClient: fakeClient);
+        final teamProv = TeamProvider(apiClient: fakeClient);
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: authProv),
+              ChangeNotifierProvider.value(value: actProv),
+              ChangeNotifierProvider.value(value: taskProv),
+              ChangeNotifierProvider.value(value: projProv),
+              ChangeNotifierProvider.value(value: teamProv),
+            ],
+            child: const MaterialApp(home: ActivityListScreen()),
+          ),
+        );
+
+        await tester.pumpAndSettle();
+
+        // Verify Actor Name is rendered
+        expect(find.text('Amit Sharma'), findsNWidgets(2));
+
+        // Verify Entity & Action labels are populated
+        expect(
+          find.text('Entity: task | Action: task_priority_changed'),
+          findsOneWidget,
+        );
+        expect(
+          find.text('Entity: task | Action: task_status_changed'),
+          findsOneWidget,
+        );
+
+        // Verify resolved Task titles and formatted values
+        expect(
+          find.text(
+            'Task "Implement User Authentication" priority changed from High to Low',
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.text(
+            'Task "Implement User Authentication" status changed from To Do to In Progress',
+          ),
+          findsOneWidget,
+        );
+
+        // Verify accessibility Semantics
+        expect(
+          find.byWidgetPredicate(
+            (w) =>
+                w is Semantics &&
+                w.properties.label ==
+                    'Amit Sharma performed: Task "Implement User Authentication" priority changed from High to Low',
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'TaskDetailScreen RBAC: Employee sees Edit button ONLY when assigned to them; Manager and Admin always see Edit button',
+      (tester) async {
+        final mockHttpClient = MockClient((request) async {
+          if (request.url.path == '/tasks/task_auth_123') {
+            return http.Response(
+              jsonEncode({
+                'id': 'task_auth_123',
+                'title': 'Implement User Authentication',
+                'description': 'Auth flow description',
+                'project_id': 'proj_1',
+                'assigned_to':
+                    'emp_amit_2', // Initially assigned to Amit Sharma (Manager)
+                'priority': 'high',
+                'status': 'todo',
+                'due_date': '2026-10-01',
+                'created_by': 'emp_amit_2',
+              }),
+              200,
+            );
+          }
+          if (request.url.path == '/employees') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'emp_neha_1',
+                  'user_id': 'user_neha_1',
+                  'name': 'Neha',
+                  'email': 'neha@flow.com',
+                  'role': 'employee',
+                  'department': 'Engineering',
+                  'status': 'active',
+                },
+                {
+                  'id': 'emp_amit_2',
+                  'user_id': 'user_amit_2',
+                  'name': 'Amit Sharma',
+                  'email': 'amit@taskflow.com',
+                  'role': 'manager',
+                  'department': 'Engineering',
+                  'status': 'active',
+                },
+                {
+                  'id': 'emp_raj_3',
+                  'user_id': 'user_raj_3',
+                  'name': 'Raj',
+                  'email': 'raj@test.com',
+                  'role': 'admin',
+                  'department': 'Management',
+                  'status': 'active',
+                },
+              ]),
+              200,
+            );
+          }
+          if (request.url.path == '/projects') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'proj_1',
+                  'name': 'TaskFlow Web',
+                  'description': 'Web Application',
+                  'team_id': 'team_1',
+                  'status': 'active',
+                },
+              ]),
+              200,
+            );
+          }
+          if (request.url.path.contains('/comments')) {
+            return http.Response(jsonEncode([]), 200);
+          }
+          return http.Response(jsonEncode({}), 200);
+        });
+
+        final fakeStorage = SecureStorageService();
+        final fakeClient = ApiClient(
+          client: mockHttpClient,
+          storage: fakeStorage,
+        );
+        final authProv = AuthProvider(
+          apiClient: fakeClient,
+          storage: fakeStorage,
+        );
+        final taskProv = TaskProvider(apiClient: fakeClient);
+        final projProv = ProjectProvider(apiClient: fakeClient);
+        final teamProv = TeamProvider(apiClient: fakeClient);
+
+        // Preload data
+        await taskProv.getTask('task_auth_123');
+        await teamProv.fetchEmployees();
+        await projProv.fetchProjects();
+
+        // 1. Employee + task assigned to another employee/manager -> Edit button HIDDEN
+        authProv.setUserForTesting(
+          const User(
+            id: 'user_neha_1',
+            name: 'Neha',
+            email: 'neha@flow.com',
+            role: UserRole.employee,
+          ),
+        );
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: authProv),
+              ChangeNotifierProvider.value(value: taskProv),
+              ChangeNotifierProvider.value(value: projProv),
+              ChangeNotifierProvider.value(value: teamProv),
+            ],
+            child: MaterialApp(home: TaskDetailScreen(taskId: 'task_auth_123')),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byIcon(Icons.edit_outlined), findsNothing);
+
+        // 2. Employee + assigned task -> Edit button VISIBLE
+        taskProv.setSelectedTaskForTesting(
+          taskProv.selectedTask!.copyWith(assignedTo: 'emp_neha_1'),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byIcon(Icons.edit_outlined), findsOneWidget);
+
+        // 3. Manager -> Edit button VISIBLE even when assigned to employee
+        authProv.setUserForTesting(
+          const User(
+            id: 'user_amit_2',
+            name: 'Amit Sharma',
+            email: 'amit@taskflow.com',
+            role: UserRole.manager,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byIcon(Icons.edit_outlined), findsOneWidget);
+
+        // 4. Admin -> Edit button VISIBLE
+        authProv.setUserForTesting(
+          const User(
+            id: 'user_raj_3',
+            name: 'Raj',
+            email: 'raj@test.com',
+            role: UserRole.admin,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byIcon(Icons.edit_outlined), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'TaskDetailScreen resolves assignee name and comment author names with accessibility semantics',
+      (tester) async {
+        final mockHttpClient = MockClient((request) async {
+          if (request.url.path == '/tasks/task_auth_123') {
+            return http.Response(
+              jsonEncode({
+                'id': 'task_auth_123',
+                'title': 'Implement User Authentication',
+                'description': 'Auth flow description',
+                'project_id': 'proj_1',
+                'assigned_to': 'emp_amit_2',
+                'priority': 'high',
+                'status': 'todo',
+                'due_date': '2026-10-01',
+                'created_by': 'emp_raj_3',
+              }),
+              200,
+            );
+          }
+          if (request.url.path == '/employees') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'emp_neha_1',
+                  'user_id': 'user_neha_1',
+                  'name': 'Neha',
+                  'email': 'neha@flow.com',
+                  'role': 'employee',
+                  'department': 'Engineering',
+                  'status': 'active',
+                },
+                {
+                  'id': 'emp_amit_2',
+                  'user_id': 'user_amit_2',
+                  'name': 'Amit Sharma',
+                  'email': 'amit@taskflow.com',
+                  'role': 'manager',
+                  'department': 'Engineering',
+                  'status': 'active',
+                },
+                {
+                  'id': 'emp_raj_3',
+                  'user_id': 'user_raj_3',
+                  'name': 'Raj',
+                  'email': 'raj@test.com',
+                  'role': 'admin',
+                  'department': 'Management',
+                  'status': 'active',
+                },
+              ]),
+              200,
+            );
+          }
+          if (request.url.path == '/projects') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'proj_1',
+                  'name': 'TaskFlow Web',
+                  'description': 'Web Application',
+                  'team_id': 'team_1',
+                  'status': 'active',
+                },
+              ]),
+              200,
+            );
+          }
+          if (request.url.path.contains('/comments')) {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'c1',
+                  'task_id': 'task_auth_123',
+                  'user_id': 'user_neha_1',
+                  'content': 'I am looking into this.',
+                  'created_at': '2026-09-08T10:00:00Z',
+                  'updated_at': '2026-09-08T10:00:00Z',
+                },
+                {
+                  'id': 'c2',
+                  'task_id': 'task_auth_123',
+                  'user_id': 'user_amit_2',
+                  'content': 'Please verify token expiry.',
+                  'created_at': '2026-09-08T10:30:00Z',
+                  'updated_at': '2026-09-08T10:30:00Z',
+                },
+              ]),
+              200,
+            );
+          }
+          return http.Response(jsonEncode({}), 200);
+        });
+
+        final fakeStorage = SecureStorageService();
+        final fakeClient = ApiClient(
+          client: mockHttpClient,
+          storage: fakeStorage,
+        );
+        final authProv = AuthProvider(
+          apiClient: fakeClient,
+          storage: fakeStorage,
+        );
+        final taskProv = TaskProvider(apiClient: fakeClient);
+        final projProv = ProjectProvider(apiClient: fakeClient);
+        final teamProv = TeamProvider(apiClient: fakeClient);
+
+        authProv.setUserForTesting(
+          const User(
+            id: 'user_neha_1',
+            name: 'Neha',
+            email: 'neha@flow.com',
+            role: UserRole.employee,
+          ),
+        );
+
+        await taskProv.getTask('task_auth_123');
+        await taskProv.fetchComments('task_auth_123');
+        await teamProv.fetchEmployees();
+        await projProv.fetchProjects();
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: authProv),
+              ChangeNotifierProvider.value(value: taskProv),
+              ChangeNotifierProvider.value(value: projProv),
+              ChangeNotifierProvider.value(value: teamProv),
+            ],
+            child: const MaterialApp(
+              home: TaskDetailScreen(taskId: 'task_auth_123'),
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        // 1. Verify Assigned to displays resolved employee name "Amit Sharma"
+        expect(find.text('Assigned to: '), findsOneWidget);
+        expect(find.text('Amit Sharma'), findsWidgets);
+        expect(
+          find.byWidgetPredicate(
+            (w) =>
+                w is Semantics &&
+                w.properties.label == 'Assigned to: Amit Sharma',
+          ),
+          findsOneWidget,
+        );
+
+        // 2. Verify Comments section author names
+        expect(find.text('You'), findsOneWidget); // Neha's own comment
+        expect(find.text('Amit Sharma'), findsWidgets); // Amit's comment author
+
+        // 3. Verify Comment contents
+        expect(find.text('I am looking into this.'), findsOneWidget);
+        expect(find.text('Please verify token expiry.'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'TaskDetailScreen handles fallback cleanly when assigned employee cannot be resolved',
+      (tester) async {
+        final mockHttpClient = MockClient((request) async {
+          if (request.url.path == '/tasks/task_unresolved_1') {
+            return http.Response(
+              jsonEncode({
+                'id': 'task_unresolved_1',
+                'title': 'Orphaned Task',
+                'description': 'Task with unknown assignee',
+                'project_id': 'proj_1',
+                'assigned_to':
+                    '6a9e1e102a53967f3d6c9999', // Unknown raw ObjectId
+                'priority': 'low',
+                'status': 'todo',
+                'due_date': '2026-10-01',
+                'created_by': 'emp_raj_3',
+              }),
+              200,
+            );
+          }
+          if (request.url.path == '/employees') {
+            return http.Response(jsonEncode([]), 200);
+          }
+          if (request.url.path == '/projects') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'proj_1',
+                  'name': 'TaskFlow Web',
+                  'description': 'Web Application',
+                  'team_id': 'team_1',
+                  'status': 'active',
+                },
+              ]),
+              200,
+            );
+          }
+          if (request.url.path.contains('/comments')) {
+            return http.Response(jsonEncode([]), 200);
+          }
+          return http.Response(jsonEncode({}), 200);
+        });
+
+        final fakeStorage = SecureStorageService();
+        final fakeClient = ApiClient(
+          client: mockHttpClient,
+          storage: fakeStorage,
+        );
+        final authProv = AuthProvider(
+          apiClient: fakeClient,
+          storage: fakeStorage,
+        );
+        final taskProv = TaskProvider(apiClient: fakeClient);
+        final projProv = ProjectProvider(apiClient: fakeClient);
+        final teamProv = TeamProvider(apiClient: fakeClient);
+
+        authProv.setUserForTesting(
+          const User(
+            id: 'user_neha_1',
+            name: 'Neha',
+            email: 'neha@flow.com',
+            role: UserRole.employee,
+          ),
+        );
+
+        await taskProv.getTask('task_unresolved_1');
+        await projProv.fetchProjects();
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: authProv),
+              ChangeNotifierProvider.value(value: taskProv),
+              ChangeNotifierProvider.value(value: projProv),
+              ChangeNotifierProvider.value(value: teamProv),
+            ],
+            child: const MaterialApp(
+              home: TaskDetailScreen(taskId: 'task_unresolved_1'),
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        // Raw hex ObjectId should not be displayed; fallback 'Unknown User' is used
+        expect(find.text('6a9e1e102a53967f3d6c9999'), findsNothing);
+        expect(find.text('Unknown User'), findsOneWidget);
+        expect(
+          find.byWidgetPredicate(
+            (w) =>
+                w is Semantics &&
+                w.properties.label == 'Assigned to: Unknown User',
+          ),
+          findsOneWidget,
+        );
+
+        // Empty assigned_to displays 'Unassigned'
+        taskProv.setSelectedTaskForTesting(
+          taskProv.selectedTask!.copyWith(assignedTo: '', assigneeName: null),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Unassigned'), findsOneWidget);
+        expect(
+          find.byWidgetPredicate(
+            (w) =>
+                w is Semantics &&
+                w.properties.label == 'Assigned to: Unassigned',
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'Responsive Layout on narrow mobile viewport (360x640) - TaskDetailScreen',
+      (tester) async {
+        tester.view.physicalSize = const Size(360, 640);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final mockHttpClient = MockClient((request) async {
+          if (request.url.path == '/tasks/task_101') {
+            return http.Response(
+              jsonEncode({
+                'id': 'task_101',
+                'title': 'Implement Comprehensive Feature Title',
+                'description': 'Description text here',
+                'project_id': 'proj_101',
+                'assigned_to': 'emp_amit_2',
+                'priority': 'urgent',
+                'status': 'in_progress',
+                'due_date': '2026-12-31',
+                'created_by': 'emp_raj_3',
+              }),
+              200,
+            );
+          }
+          if (request.url.path == '/employees') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'emp_amit_2',
+                  'user_id': 'user_amit_2',
+                  'name': 'Amit Sharma Principal Manager',
+                  'email': 'amit.sharma.manager@taskfloworganization.com',
+                  'role': 'manager',
+                  'department': 'Core Engineering Platform',
+                  'status': 'active',
+                },
+              ]),
+              200,
+            );
+          }
+          if (request.url.path == '/projects') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'proj_101',
+                  'name': 'Enterprise Architecture Redesign 2026',
+                  'description': 'Complete overhaul of backend and frontend',
+                  'team_id': 'team_101',
+                  'status': 'active',
+                },
+              ]),
+              200,
+            );
+          }
+          if (request.url.path.contains('/comments')) {
+            return http.Response(jsonEncode([]), 200);
+          }
+          return http.Response(jsonEncode({}), 200);
+        });
+
+        final fakeStorage = SecureStorageService();
+        final fakeClient = ApiClient(
+          client: mockHttpClient,
+          storage: fakeStorage,
+        );
+        final authProv = AuthProvider(
+          apiClient: fakeClient,
+          storage: fakeStorage,
+        );
+        final taskProv = TaskProvider(apiClient: fakeClient);
+        final projProv = ProjectProvider(apiClient: fakeClient);
+        final teamProv = TeamProvider(apiClient: fakeClient);
+
+        authProv.setUserForTesting(
+          const User(
+            id: 'user_amit_2',
+            name: 'Amit Sharma',
+            email: 'amit@taskflow.com',
+            role: UserRole.manager,
+          ),
+        );
+
+        await taskProv.getTask('task_101');
+        await teamProv.fetchEmployees();
+        await projProv.fetchProjects();
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: authProv),
+              ChangeNotifierProvider.value(value: taskProv),
+              ChangeNotifierProvider.value(value: projProv),
+              ChangeNotifierProvider.value(value: teamProv),
+            ],
+            child: const MaterialApp(
+              home: TaskDetailScreen(taskId: 'task_101'),
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(
+          find.text('Implement Comprehensive Feature Title'),
+          findsWidgets,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'Responsive Layout on narrow mobile viewport (360x640) - TaskListScreen',
+      (tester) async {
+        tester.view.physicalSize = const Size(360, 640);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final mockHttpClient = MockClient((request) async {
+          if (request.url.path == '/tasks') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'task_101',
+                  'title': 'Implement Comprehensive Feature Title',
+                  'description': 'Description text here',
+                  'project_id': 'proj_101',
+                  'assigned_to': 'emp_amit_2',
+                  'priority': 'urgent',
+                  'status': 'in_progress',
+                  'due_date': '2026-12-31',
+                  'created_by': 'emp_raj_3',
+                },
+              ]),
+              200,
+            );
+          }
+          if (request.url.path == '/projects') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'proj_101',
+                  'name': 'Enterprise Architecture Redesign 2026',
+                  'description': 'Complete overhaul of backend and frontend',
+                  'team_id': 'team_101',
+                  'status': 'active',
+                },
+              ]),
+              200,
+            );
+          }
+          return http.Response(jsonEncode([]), 200);
+        });
+
+        final fakeStorage = SecureStorageService();
+        final fakeClient = ApiClient(
+          client: mockHttpClient,
+          storage: fakeStorage,
+        );
+        final authProv = AuthProvider(
+          apiClient: fakeClient,
+          storage: fakeStorage,
+        );
+        final taskProv = TaskProvider(apiClient: fakeClient);
+        final projProv = ProjectProvider(apiClient: fakeClient);
+
+        authProv.setUserForTesting(
+          const User(
+            id: 'user_amit_2',
+            name: 'Amit Sharma',
+            email: 'amit@taskflow.com',
+            role: UserRole.manager,
+          ),
+        );
+
+        await taskProv.fetchTasks();
+        await projProv.fetchProjects();
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: authProv),
+              ChangeNotifierProvider.value(value: taskProv),
+              ChangeNotifierProvider.value(value: projProv),
+            ],
+            child: const MaterialApp(home: TaskListScreen()),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'Responsive Layout on narrow mobile viewport (360x640) - ProjectDetailScreen and TeamDetailScreen',
+      (tester) async {
+        tester.view.physicalSize = const Size(360, 640);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final mockHttpClient = MockClient((request) async {
+          if (request.url.path == '/projects/proj_101') {
+            return http.Response(
+              jsonEncode({
+                'id': 'proj_101',
+                'name': 'Enterprise Architecture Redesign 2026',
+                'description': 'Complete overhaul of backend and frontend',
+                'team_id': 'team_101',
+                'status': 'active',
+                'start_date': '2026-01-01',
+                'end_date': '2026-12-31',
+              }),
+              200,
+            );
+          }
+          if (request.url.path == '/tasks') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'task_101',
+                  'title': 'Implement Comprehensive Feature Title',
+                  'description': 'Description text here',
+                  'project_id': 'proj_101',
+                  'assigned_to': 'emp_amit_2',
+                  'priority': 'urgent',
+                  'status': 'in_progress',
+                  'due_date': '2026-12-31',
+                  'created_by': 'emp_raj_3',
+                },
+              ]),
+              200,
+            );
+          }
+          if (request.url.path == '/teams/team_101') {
+            return http.Response(
+              jsonEncode({
+                'id': 'team_101',
+                'name': 'Full Stack Core Engineering Team',
+                'description': 'Responsible for end-to-end architecture',
+                'manager_id': 'emp_amit_2',
+                'member_ids': ['emp_neha_1'],
+              }),
+              200,
+            );
+          }
+          if (request.url.path == '/employees') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'emp_neha_1',
+                  'user_id': 'user_neha_1',
+                  'name': 'Neha LongNameEmployee',
+                  'email': 'neha.verylongemailaddress@taskfloworganization.com',
+                  'role': 'employee',
+                  'department': 'Core Engineering Platform',
+                  'status': 'active',
+                },
+                {
+                  'id': 'emp_amit_2',
+                  'user_id': 'user_amit_2',
+                  'name': 'Amit Sharma Principal Manager',
+                  'email': 'amit.sharma.manager@taskfloworganization.com',
+                  'role': 'manager',
+                  'department': 'Core Engineering Platform',
+                  'status': 'active',
+                },
+              ]),
+              200,
+            );
+          }
+          return http.Response(jsonEncode({}), 200);
+        });
+
+        final fakeStorage = SecureStorageService();
+        final fakeClient = ApiClient(
+          client: mockHttpClient,
+          storage: fakeStorage,
+        );
+        final authProv = AuthProvider(
+          apiClient: fakeClient,
+          storage: fakeStorage,
+        );
+        final taskProv = TaskProvider(apiClient: fakeClient);
+        final projProv = ProjectProvider(apiClient: fakeClient);
+        final teamProv = TeamProvider(apiClient: fakeClient);
+
+        authProv.setUserForTesting(
+          const User(
+            id: 'user_amit_2',
+            name: 'Amit Sharma',
+            email: 'amit@taskflow.com',
+            role: UserRole.manager,
+          ),
+        );
+
+        await projProv.getProject('proj_101');
+        await taskProv.fetchTasks(projectId: 'proj_101');
+        await teamProv.fetchEmployees();
+        await teamProv.fetchTeams();
+
+        // ProjectDetailScreen test
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: authProv),
+              ChangeNotifierProvider.value(value: taskProv),
+              ChangeNotifierProvider.value(value: projProv),
+              ChangeNotifierProvider.value(value: teamProv),
+            ],
+            child: const MaterialApp(
+              home: ProjectDetailScreen(projectId: 'proj_101'),
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(tester.takeException(), isNull);
+
+        // ProjectListScreen test
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: authProv),
+              ChangeNotifierProvider.value(value: taskProv),
+              ChangeNotifierProvider.value(value: projProv),
+              ChangeNotifierProvider.value(value: teamProv),
+            ],
+            child: const MaterialApp(home: ProjectListScreen()),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(tester.takeException(), isNull);
+
+        // TeamDetailScreen test
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: authProv),
+              ChangeNotifierProvider.value(value: taskProv),
+              ChangeNotifierProvider.value(value: projProv),
+              ChangeNotifierProvider.value(value: teamProv),
+            ],
+            child: const MaterialApp(
+              home: TeamDetailScreen(teamId: 'team_101'),
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(tester.takeException(), isNull);
+      },
+    );
+  });
+}
