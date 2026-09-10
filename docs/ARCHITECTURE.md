@@ -121,3 +121,41 @@ taskflow-app/lib/
   - Last-admin protection prevents removing the final system administrator (409 Conflict).
   - Active team manager safety prevents demoting managers leading active teams (409 Conflict).
 - **Rate Limiting**: 5 requests per 60 seconds per IP on sensitive authentication routes (`/auth/login`, `/auth/register`, `/auth/password`).
+
+---
+
+## 4. Infrastructure & Container Orchestration
+
+TaskFlow uses Docker Compose to orchestrate its core backend services in a unified network:
+
+```
++-------------------------------------------------------------------------+
+| Docker Compose Network (Bridge)                                         |
+|                                                                         |
+|  +-------------------------------------------------------------------+  |
+|  | Service: backend (FastAPI / Python 3.13-slim)                     |  |
+|  | - Port: 8000:8000                                                 |  |
+|  | - Non-root User: taskflow (UID 1000)                              |  |
+|  | - Connects to: mongodb:27017, redis:6379/0                         |  |
+|  | - Healthcheck: GET /health (interval: 10s, timeout: 5s, retries: 5)|  |
+|  +-------------------------------------------------------------------+  |
+|                 | (service_healthy)         | (service_healthy)         |
+|                 v                           v                           |
+|  +-------------------------------+  +--------------------------------+  |
+|  | Service: mongodb              |  | Service: redis                 |  |
+|  | - Image: mongo:8              |  | - Image: redis:8               |  |
+|  | - Port: 27017:27017           |  | - Port: 6379:6379              |  |
+|  | - Volume: mongodb_data        |  | - Volume: redis_data           |  |
+|  | - Healthcheck: mongosh ping   |  | - Healthcheck: redis-cli ping  |  |
+|  +-------------------------------+  +--------------------------------+  |
++-------------------------------------------------------------------------+
+```
+
+### 4.1 Inter-Service Networking
+- **Service Discovery**: The containerized FastAPI backend communicates directly with MongoDB (`mongodb://mongodb:27017`) and Redis (`redis://redis:6379/0`) via Docker Compose DNS names.
+- **Port Mapping**: Host port mappings (`8000:8000`, `27017:27017`, `6379:6379`) are exposed for client connectivity and developer tooling.
+- **Dependency Ordering**: `backend` utilizes `depends_on` with `condition: service_healthy` for both `mongodb` and `redis`, ensuring databases are fully responsive before FastAPI initializes.
+
+### 4.2 Security & Least Privilege
+- **Non-Root Execution**: The backend container creates a dedicated unprivileged user `taskflow` (UID 1000) and executes all application code under this account.
+- **External Secret Management**: Sensitive credentials (`JWT_SECRET`) are injected at runtime via environment variables rather than embedded in image layers.

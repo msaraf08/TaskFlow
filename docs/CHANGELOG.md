@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.0.0 - Phase 8: Dockerization & Deployment Readiness
+
+### Added
+- Production-capable `taskflow-backend/Dockerfile` based on `python:3.13-slim` with layer-cached dependency installation and non-root execution (`USER taskflow`, UID 1000).
+- Build context exclusion file `taskflow-backend/.dockerignore` filtering local virtual environments, test artifacts, caches, and secrets.
+- Docker Compose service orchestration in `compose.yaml` linking `backend`, `mongodb`, and `redis` under a shared bridge network.
+- Container healthchecks and dependency startup ordering (`condition: service_healthy`) for MongoDB (`mongosh ping`), Redis (`redis-cli ping`), and FastAPI backend (`GET /health`).
+- Runtime environment variable injection for `MONGODB_URL`, `REDIS_URL`, `JWT_SECRET`, and application settings.
+- Updated `taskflow-backend/.env.example` documenting both local host and containerized networking variables.
+- Dual-mode setup instructions in `docs/SETUP.md` and diagnostic commands in `docs/COMMANDS.md`.
+
 ## v0.9.0 - Phase 7.5: Admin User & Role Management
 
 ### Added

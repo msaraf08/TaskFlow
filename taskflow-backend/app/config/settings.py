@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     redis_port: int | None = None
     redis_db: int | None = None
 
-    jwt_secret: str = "supersecretkey"
+    jwt_secret: str
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
 

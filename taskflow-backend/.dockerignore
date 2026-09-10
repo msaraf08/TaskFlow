@@ -1,0 +1,16 @@
+venv/
+.venv/
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+.git/
+.gitignore
+scratch/
+*.log
+tests/
