@@ -104,6 +104,29 @@ class ApiClient {
     }
   }
 
+  Future<dynamic> patch(
+    String path, {
+    dynamic body,
+    bool requiresAuth = true,
+  }) async {
+    final uri = _buildUri(path);
+    try {
+      final headers = await _headers(requiresAuth: requiresAuth);
+      final response = await _client
+          .patch(
+            uri,
+            headers: headers,
+            body: body != null ? jsonEncode(body) : null,
+          )
+          .timeout(AppConfig.requestTimeout);
+      return _handleResponse(response);
+    } on SocketException {
+      throw NetworkException();
+    } on TimeoutException {
+      throw TimeoutException();
+    }
+  }
+
   Future<dynamic> delete(String path, {bool requiresAuth = true}) async {
     final uri = _buildUri(path);
     try {

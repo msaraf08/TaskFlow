@@ -175,14 +175,14 @@ Stores discussion comments on tasks. Comments reference tasks by `task_id` and a
 ---
 
 ### 7. `activities`
-Stores system activity and audit trail records. Activities capture state-modifying actions across tasks, comments, projects, and teams.
+Stores system activity and audit trail records. Activities capture state-modifying actions across tasks, comments, projects, teams, and employee roles.
 
 ```json
 {
   "_id": "ObjectId",
   "actor_user_id": "string (ForeignKey -> users._id, JWT sub)",
-  "action": "string (task_created | task_updated | task_deleted | task_assigned_changed | task_status_changed | task_priority_changed | task_project_changed | comment_created | comment_updated | comment_deleted)",
-  "entity_type": "string (task | comment | project | team)",
+  "action": "string (task_created | task_updated | task_deleted | task_assigned_changed | task_status_changed | task_priority_changed | task_project_changed | comment_created | comment_updated | comment_deleted | user_role_changed)",
+  "entity_type": "string (task | comment | project | team | employee)",
   "entity_id": "string (ObjectId string of affected entity)",
   "task_id": "string (optional, ObjectId string)",
   "project_id": "string (optional, ObjectId string)",

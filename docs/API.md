@@ -224,6 +224,36 @@ Tokens are validated against cryptographic signatures, expiration time, and acti
   - `400 Bad Request`: Malformed ObjectId.
   - `404 Not Found`: Employee does not exist.
 
+#### `PATCH /employees/{employee_id}/role`
+- **Description:** Updates the organizational and authentication role for an employee and synchronizes both `employees` and `users` collections. Rejects self-demotion, last-admin demotion, and demoting active team managers.
+- **Access:** Admin only (`role: admin` caller). Target role may be `employee`, `manager`, or `admin`.
+- **Request Body (`EmployeeRoleUpdateSchema`):**
+  ```json
+  {
+    "role": "manager"
+  }
+  ```
+- **Response `200 OK` (`EmployeeResponseSchema`):**
+  ```json
+  {
+    "id": "6a99d4398a5cbc1907f06f9b",
+    "user_id": "6a99d4398a5cbc1907f06f9c",
+    "name": "Jane Smith",
+    "email": "jane.smith@example.com",
+    "phone": "+1-555-0199",
+    "department": "Engineering",
+    "role": "manager",
+    "joining_date": "2026-09-01",
+    "status": "active"
+  }
+  ```
+- **Errors:**
+  - `400 Bad Request`: Malformed `employee_id` ObjectId.
+  - `403 Forbidden`: Caller is not an admin, or admin caller attempts to change their own role ("Administrators cannot change their own role.").
+  - `404 Not Found`: Employee does not exist.
+  - `409 Conflict`: Target is the last administrator ("Cannot remove the last administrator.") or target manages one or more active teams ("Cannot demote {name}. They are currently managing {count} team(s). Reassign those teams first.").
+  - `422 Unprocessable Entity`: Invalid role value or extra unexpected fields.
+
 #### `PATCH /employees/{employee_id}/deactivate`
 - **Description:** Deactivates employee and revokes user login access (`status: "inactive"`).
 - **Access:** Admin only (`role: admin`)

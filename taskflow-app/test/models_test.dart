@@ -189,7 +189,7 @@ void main() {
         actFallback.formatDescription(
           taskTitles: {'6a9e2c3430b37adc41d8ae55': 'Resolved Task Name'},
         ),
-        'Task "Resolved Task Name" priority changed from High to Low',
+        'Amit Sharma changed task "Resolved Task Name" priority from High to Low',
       );
     });
 

@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, time, timezone
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -11,7 +12,7 @@ from app.schemas.user_schema import (
     UserResponseSchema,
     PasswordChangeResponseSchema
 )
-from app.database.dependencies import get_user_collection
+from app.database.dependencies import get_user_collection, get_employee_collection
 from app.core.security import hash_password, verify_password
 from app.core.jwt import create_access_token
 from app.core.dependencies import get_current_user
@@ -30,7 +31,8 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 )
 async def register_user(
     user: UserCreateSchema,
-    collection=Depends(get_user_collection)
+    collection=Depends(get_user_collection),
+    employee_collection=Depends(get_employee_collection),
 ):
     existing = await collection.find_one({"email": user.email})
     if existing:
@@ -53,9 +55,23 @@ async def register_user(
     }
 
     result = await collection.insert_one(user_dict)
+    user_id = str(result.inserted_id)
+
+    # Automatically create corresponding employee record
+    if employee_collection is not None:
+        await employee_collection.insert_one({
+            "user_id": user_id,
+            "name": user.name,
+            "email": user.email,
+            "phone": "",
+            "department": "Executive" if assigned_role == "admin" else "General",
+            "role": assigned_role,
+            "joining_date": datetime.combine(datetime.now(timezone.utc).date(), time.min),
+            "status": "active"
+        })
 
     user_response = UserResponseSchema(
-        id=str(result.inserted_id),
+        id=user_id,
         name=user.name,
         email=user.email,
         role=assigned_role,

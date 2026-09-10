@@ -48,16 +48,48 @@ class TeamProvider extends ChangeNotifier {
   }
 
   Future<void> fetchEmployees() async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
     try {
       final response = await _client.get('/employees');
       if (response is List) {
         _employees = response
             .map((item) => Employee.fromJson(item as Map<String, dynamic>))
             .toList();
-        notifyListeners();
       }
-    } catch (_) {
-      // Handled silently if employee endpoint is restricted for current role
+      _isLoading = false;
+    } catch (e) {
+      _isLoading = false;
+      _errorMessage = e.toString();
+    }
+    notifyListeners();
+  }
+
+  Future<Employee> updateEmployeeRole(String employeeId, String newRole) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final response = await _client.patch(
+        '/employees/$employeeId/role',
+        body: {'role': newRole},
+      );
+      final updated = Employee.fromJson(response as Map<String, dynamic>);
+      final index = _employees.indexWhere((e) => e.id == employeeId);
+      if (index != -1) {
+        _employees[index] = updated;
+      }
+      _isLoading = false;
+      notifyListeners();
+      return updated;
+    } catch (e) {
+      _isLoading = false;
+      _errorMessage = e.toString();
+      notifyListeners();
+      rethrow;
     }
   }
 

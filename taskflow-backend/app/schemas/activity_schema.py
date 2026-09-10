@@ -15,6 +15,7 @@ class ActivityAction(str, Enum):
     COMMENT_CREATED = "comment_created"
     COMMENT_UPDATED = "comment_updated"
     COMMENT_DELETED = "comment_deleted"
+    USER_ROLE_CHANGED = "user_role_changed"
 
 
 class ActivityEntityType(str, Enum):
@@ -22,6 +23,7 @@ class ActivityEntityType(str, Enum):
     COMMENT = "comment"
     PROJECT = "project"
     TEAM = "team"
+    EMPLOYEE = "employee"
 
 
 ALLOWED_METADATA_KEYS = {

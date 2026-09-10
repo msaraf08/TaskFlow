@@ -1,6 +1,6 @@
 from datetime import date
-from typing import Optional
-from pydantic import BaseModel, EmailStr, Field
+from typing import Literal, Optional
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class EmployeeCreateSchema(BaseModel):
@@ -19,6 +19,12 @@ class EmployeeUpdateSchema(BaseModel):
     department: Optional[str] = Field(None, min_length=1)
     role: Optional[str] = None
     joining_date: Optional[date] = None
+
+
+class EmployeeRoleUpdateSchema(BaseModel):
+    role: Literal["employee", "manager", "admin"]
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class EmployeeResponseSchema(BaseModel):

@@ -7,6 +7,7 @@ import 'package:http/testing.dart';
 import 'package:provider/provider.dart';
 import 'package:taskflow/core/api_client.dart';
 import 'package:taskflow/core/secure_storage.dart';
+import 'package:taskflow/models/activity.dart';
 import 'package:taskflow/models/project.dart';
 import 'package:taskflow/models/task.dart';
 import 'package:taskflow/models/user.dart';
@@ -16,9 +17,11 @@ import 'package:taskflow/providers/project_provider.dart';
 import 'package:taskflow/providers/task_provider.dart';
 import 'package:taskflow/providers/team_provider.dart';
 import 'package:taskflow/screens/activities/activity_list_screen.dart';
+import 'package:taskflow/screens/admin/user_management_screen.dart';
 import 'package:taskflow/screens/auth/login_screen.dart';
 import 'package:taskflow/screens/auth/register_screen.dart';
 import 'package:taskflow/screens/dashboard/dashboard_screen.dart';
+import 'package:taskflow/screens/main_navigation_screen.dart';
 import 'package:taskflow/screens/projects/project_detail_screen.dart';
 import 'package:taskflow/screens/projects/project_list_screen.dart';
 import 'package:taskflow/screens/tasks/task_detail_screen.dart';
@@ -763,7 +766,7 @@ void main() {
 
         await tester.pumpAndSettle();
 
-        // Verify Actor Name is rendered
+        // Verify Actor Name is rendered in the header
         expect(find.text('Amit Sharma'), findsNWidgets(2));
 
         // Verify Entity & Action labels are populated
@@ -776,16 +779,16 @@ void main() {
           findsOneWidget,
         );
 
-        // Verify resolved Task titles and formatted values
+        // Verify resolved Task titles and formatted values with actor names
         expect(
           find.text(
-            'Task "Implement User Authentication" priority changed from High to Low',
+            'Amit Sharma changed task "Implement User Authentication" priority from High to Low',
           ),
           findsOneWidget,
         );
         expect(
           find.text(
-            'Task "Implement User Authentication" status changed from To Do to In Progress',
+            'Amit Sharma changed task "Implement User Authentication" status from To Do to In Progress',
           ),
           findsOneWidget,
         );
@@ -796,7 +799,7 @@ void main() {
             (w) =>
                 w is Semantics &&
                 w.properties.label ==
-                    'Amit Sharma performed: Task "Implement User Authentication" priority changed from High to Low',
+                    'Amit Sharma changed task "Implement User Authentication" priority from High to Low',
           ),
           findsOneWidget,
         );
@@ -1591,6 +1594,476 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
         expect(tester.takeException(), isNull);
+      },
+    );
+
+    test('Activity model formats user_role_changed description correctly', () {
+      final act = Activity(
+        id: 'act_role_1',
+        actorUserId: 'admin_user_1',
+        actorName: 'Admin User',
+        action: 'user_role_changed',
+        entityType: 'employee',
+        entityId: 'emp_2',
+        metadata: {
+          'name': 'Employee Two',
+          'old_value': 'employee',
+          'new_value': 'manager',
+        },
+        createdAt: DateTime.parse('2026-09-09T10:00:00Z'),
+      );
+
+      expect(
+        act.formatDescription(),
+        "Admin User changed Employee Two's role from Employee to Manager",
+      );
+
+      final actNoActor = Activity(
+        id: 'act_role_2',
+        actorUserId: 'admin_user_1',
+        action: 'user_role_changed',
+        entityType: 'employee',
+        entityId: 'emp_2',
+        metadata: {
+          'name': 'Employee Two',
+          'old_value': 'employee',
+          'new_value': 'manager',
+        },
+        createdAt: DateTime.parse('2026-09-09T10:00:00Z'),
+      );
+
+      expect(
+        actNoActor.formatDescription(),
+        'Role for Employee Two changed from Employee to Manager',
+      );
+    });
+
+    testWidgets(
+      'MainNavigationScreen displays Drawer for Admin and hides for Employee',
+      (tester) async {
+        final mockHttpClient = MockClient((request) async {
+          return http.Response(jsonEncode([]), 200);
+        });
+
+        final fakeStorage = SecureStorageService();
+        final fakeClient = ApiClient(
+          client: mockHttpClient,
+          storage: fakeStorage,
+        );
+        final authProv = AuthProvider(
+          apiClient: fakeClient,
+          storage: fakeStorage,
+        );
+        final taskProv = TaskProvider(apiClient: fakeClient);
+        final projProv = ProjectProvider(apiClient: fakeClient);
+        final teamProv = TeamProvider(apiClient: fakeClient);
+        final actProv = ActivityProvider(apiClient: fakeClient);
+
+        // 1. Employee login -> No drawer button in AppBar
+        authProv.setUserForTesting(
+          const User(
+            id: 'user_emp_1',
+            name: 'Employee One',
+            email: 'e1@taskflow.com',
+            role: UserRole.employee,
+          ),
+        );
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: authProv),
+              ChangeNotifierProvider.value(value: taskProv),
+              ChangeNotifierProvider.value(value: projProv),
+              ChangeNotifierProvider.value(value: teamProv),
+              ChangeNotifierProvider.value(value: actProv),
+            ],
+            child: const MaterialApp(home: MainNavigationScreen()),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Check that there is no drawer menu icon in AppBar for Employee
+        expect(find.byIcon(Icons.menu), findsNothing);
+
+        // 2. Admin login -> Drawer menu icon in AppBar exists
+        authProv.setUserForTesting(
+          const User(
+            id: 'user_admin_1',
+            name: 'Admin User',
+            email: 'admin@taskflow.com',
+            role: UserRole.admin,
+          ),
+        );
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: authProv),
+              ChangeNotifierProvider.value(value: taskProv),
+              ChangeNotifierProvider.value(value: projProv),
+              ChangeNotifierProvider.value(value: teamProv),
+              ChangeNotifierProvider.value(value: actProv),
+            ],
+            child: const MaterialApp(home: MainNavigationScreen()),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byIcon(Icons.menu), findsOneWidget);
+
+        // Open the drawer
+        await tester.tap(find.byIcon(Icons.menu));
+        await tester.pumpAndSettle();
+
+        expect(find.text('User Management'), findsOneWidget);
+        expect(find.text('Manage employees and roles'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'UserManagementScreen renders list, disables self role edit, and performs role update with confirmation',
+      (tester) async {
+        final List<Map<String, dynamic>> requestsMade = [];
+
+        final mockHttpClient = MockClient((request) async {
+          requestsMade.add({
+            'method': request.method,
+            'path': request.url.path,
+            'body': request.body.isNotEmpty ? jsonDecode(request.body) : null,
+          });
+
+          if (request.method == 'GET' && request.url.path == '/employees') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'emp_admin_1',
+                  'user_id': 'user_admin_1',
+                  'name': 'Raj Admin',
+                  'email': 'admin@taskflow.com',
+                  'role': 'admin',
+                  'department': 'Exec',
+                  'status': 'active',
+                },
+                {
+                  'id': 'emp_e2_2',
+                  'user_id': 'user_e2_2',
+                  'name': 'Employee Two',
+                  'email': 'e2@taskflow.com',
+                  'role': 'employee',
+                  'department': 'Marketing',
+                  'status': 'active',
+                },
+              ]),
+              200,
+            );
+          }
+
+          if (request.method == 'PATCH' &&
+              request.url.path == '/employees/emp_e2_2/role') {
+            return http.Response(
+              jsonEncode({
+                'id': 'emp_e2_2',
+                'user_id': 'user_e2_2',
+                'name': 'Employee Two',
+                'email': 'e2@taskflow.com',
+                'role': 'manager',
+                'department': 'Marketing',
+                'status': 'active',
+              }),
+              200,
+            );
+          }
+
+          return http.Response(jsonEncode({}), 200);
+        });
+
+        final fakeStorage = SecureStorageService();
+        final fakeClient = ApiClient(
+          client: mockHttpClient,
+          storage: fakeStorage,
+        );
+        final authProv = AuthProvider(
+          apiClient: fakeClient,
+          storage: fakeStorage,
+        );
+        final teamProv = TeamProvider(apiClient: fakeClient);
+
+        // Current logged in user is Raj Admin
+        authProv.setUserForTesting(
+          const User(
+            id: 'user_admin_1',
+            name: 'Raj Admin',
+            email: 'admin@taskflow.com',
+            role: UserRole.admin,
+          ),
+        );
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: authProv),
+              ChangeNotifierProvider.value(value: teamProv),
+            ],
+            child: const MaterialApp(home: UserManagementScreen()),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // 1. Verify employee list is rendered
+        expect(find.text('Raj Admin'), findsOneWidget);
+        expect(find.text('Employee Two'), findsOneWidget);
+        expect(find.text('Admin'), findsOneWidget);
+        expect(find.text('Employee'), findsOneWidget);
+
+        // 2. For self (Raj Admin), "Self" is displayed and no "Change Role" button
+        expect(find.text('Self'), findsOneWidget);
+
+        // 3. For Employee Two, "Change Role" button is present
+        expect(find.text('Change Role'), findsOneWidget);
+
+        // 4. Tap "Change Role" for Employee Two
+        await tester.tap(find.text('Change Role'));
+        await tester.pumpAndSettle();
+
+        // Role selection dialog is shown
+        expect(find.text('Change Role for Employee Two'), findsOneWidget);
+        expect(find.text('Current role: Employee'), findsOneWidget);
+
+        // Open dropdown and select Manager role
+        await tester.tap(find.byType(DropdownButtonFormField<String>));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Manager').last);
+        await tester.pumpAndSettle();
+
+        // Click "Next"
+        await tester.tap(find.text('Next'));
+        await tester.pumpAndSettle();
+
+        // Confirmation dialog is shown
+        expect(find.text('Confirm Role Change'), findsOneWidget);
+        expect(
+          find.text(
+            'Are you sure you want to change the role of Employee Two from Employee to Manager?',
+          ),
+          findsOneWidget,
+        );
+
+        // Confirm change
+        await tester.tap(find.text('Confirm Change'));
+        await tester.pumpAndSettle();
+
+        // Verify PATCH request was sent
+        final patchReq = requestsMade.firstWhere((r) => r['method'] == 'PATCH');
+        expect(patchReq['path'], '/employees/emp_e2_2/role');
+        expect(patchReq['body'], {'role': 'manager'});
+
+        // Verify success snackbar
+        expect(
+          find.text('Role updated to Manager for Employee Two'),
+          findsOneWidget,
+        );
+
+        // Verify updated role badge is now Manager
+        expect(find.text('Manager'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'UserManagementScreen handles 409 conflict error when changing role',
+      (tester) async {
+        final mockHttpClient = MockClient((request) async {
+          if (request.method == 'GET' && request.url.path == '/employees') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'emp_admin_1',
+                  'user_id': 'user_admin_1',
+                  'name': 'Raj Admin',
+                  'email': 'admin@taskflow.com',
+                  'role': 'admin',
+                  'department': 'Exec',
+                  'status': 'active',
+                },
+                {
+                  'id': 'emp_m1_1',
+                  'user_id': 'user_m1_1',
+                  'name': 'Manager One',
+                  'email': 'm1@taskflow.com',
+                  'role': 'manager',
+                  'department': 'Engineering',
+                  'status': 'active',
+                },
+              ]),
+              200,
+            );
+          }
+
+          if (request.method == 'PATCH' &&
+              request.url.path == '/employees/emp_m1_1/role') {
+            return http.Response(
+              jsonEncode({
+                'detail':
+                    'Cannot demote Manager One. They are currently managing 1 team(s). Reassign those teams first.',
+              }),
+              409,
+            );
+          }
+
+          return http.Response(jsonEncode({}), 200);
+        });
+
+        final fakeStorage = SecureStorageService();
+        final fakeClient = ApiClient(
+          client: mockHttpClient,
+          storage: fakeStorage,
+        );
+        final authProv = AuthProvider(
+          apiClient: fakeClient,
+          storage: fakeStorage,
+        );
+        final teamProv = TeamProvider(apiClient: fakeClient);
+
+        authProv.setUserForTesting(
+          const User(
+            id: 'user_admin_1',
+            name: 'Raj Admin',
+            email: 'admin@taskflow.com',
+            role: UserRole.admin,
+          ),
+        );
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: authProv),
+              ChangeNotifierProvider.value(value: teamProv),
+            ],
+            child: const MaterialApp(home: UserManagementScreen()),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Tap "Change Role" for Manager One
+        await tester.tap(find.text('Change Role'));
+        await tester.pumpAndSettle();
+
+        // Open dropdown and select Employee role
+        await tester.tap(find.byType(DropdownButtonFormField<String>));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Employee').last);
+        await tester.pumpAndSettle();
+
+        // Click "Next"
+        await tester.tap(find.text('Next'));
+        await tester.pumpAndSettle();
+
+        // Confirm change
+        await tester.tap(find.text('Confirm Change'));
+        await tester.pumpAndSettle();
+
+        // Verify error message from 409 is displayed in SnackBar
+        expect(
+          find.text(
+            'Cannot demote Manager One. They are currently managing 1 team(s). Reassign those teams first.',
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'DashboardScreen renders recent activities with human-readable task titles',
+      (tester) async {
+        final mockHttpClient = MockClient((request) async {
+          if (request.url.path.contains('activities')) {
+            return http.Response(
+              jsonEncode({
+                'activities': [
+                  {
+                    'id': 'act_comment_1',
+                    'actor_user_id': 'user_raj_1',
+                    'actor_name': 'Raj Admin',
+                    'action': 'comment_created',
+                    'entity_type': 'comment',
+                    'entity_id': 'comm_123',
+                    'task_id': 'task_auth_999',
+                    'metadata': {'content_preview': 'Looking good'},
+                    'created_at': '2026-09-09T12:00:00Z',
+                  },
+                ],
+                'total': 1,
+                'skip': 0,
+                'limit': 5,
+              }),
+              200,
+            );
+          }
+          if (request.url.path == '/tasks') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'task_auth_999',
+                  'title': 'Implement User Authentication',
+                  'description': 'Auth Flow',
+                  'project_id': 'proj_1',
+                  'assigned_to': 'emp_1',
+                  'priority': 'high',
+                  'status': 'in_progress',
+                  'created_at': '2026-09-01T00:00:00Z',
+                },
+              ]),
+              200,
+            );
+          }
+          return http.Response(jsonEncode([]), 200);
+        });
+
+        final fakeStorage = SecureStorageService();
+        final fakeClient = ApiClient(
+          client: mockHttpClient,
+          storage: fakeStorage,
+        );
+        final authProv = AuthProvider(
+          apiClient: fakeClient,
+          storage: fakeStorage,
+        );
+        final teamProv = TeamProvider(apiClient: fakeClient);
+        final projProv = ProjectProvider(apiClient: fakeClient);
+        final taskProv = TaskProvider(apiClient: fakeClient);
+        final actProv = ActivityProvider(apiClient: fakeClient);
+
+        authProv.setUserForTesting(
+          const User(
+            id: 'user_raj_1',
+            name: 'Raj Admin',
+            email: 'raj@test.com',
+            role: UserRole.admin,
+          ),
+        );
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: authProv),
+              ChangeNotifierProvider.value(value: teamProv),
+              ChangeNotifierProvider.value(value: projProv),
+              ChangeNotifierProvider.value(value: taskProv),
+              ChangeNotifierProvider.value(value: actProv),
+            ],
+            child: const MaterialApp(home: DashboardScreen()),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Verify task title and actor name are resolved instead of raw task ObjectId
+        expect(
+          find.text(
+            'Raj Admin added a comment on task "Implement User Authentication"',
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('task_auth_999'), findsNothing);
       },
     );
   });

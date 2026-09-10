@@ -7,7 +7,7 @@ from app.core.jwt import create_access_token
 
 
 @pytest.mark.asyncio
-async def test_public_registration_bootstrap_and_role_security(client):
+async def test_public_registration_bootstrap_and_role_security(client, mock_employees_collection):
     # 1. First user registers -> bootstrapped as admin
     resp1 = await client.post(
         "/auth/register",
@@ -25,6 +25,11 @@ async def test_public_registration_bootstrap_and_role_security(client):
     assert "password" not in data1["user"]
     assert "password" not in data1
 
+    # Verify first admin employee document
+    admin_emp = await mock_employees_collection.find_one({"email": "admin@example.com"})
+    assert admin_emp is not None
+    assert admin_emp["role"] == "admin"
+
     # 2. Second user registers -> forced to employee role
     resp2 = await client.post(
         "/auth/register",
@@ -37,6 +42,12 @@ async def test_public_registration_bootstrap_and_role_security(client):
     assert resp2.status_code == 201
     data2 = resp2.json()
     assert data2["user"]["role"] == "employee"
+
+    # Verify second employee document
+    emp_doc = await mock_employees_collection.find_one({"email": "employee@example.com"})
+    assert emp_doc is not None
+    assert emp_doc["name"] == "Regular Employee"
+    assert emp_doc["role"] == "employee"
 
     # 3. Duplicate email registration fails
     resp3 = await client.post(

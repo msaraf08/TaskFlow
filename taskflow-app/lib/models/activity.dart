@@ -55,6 +55,12 @@ class Activity {
         return 'High';
       case 'urgent':
         return 'Urgent';
+      case 'employee':
+        return 'Employee';
+      case 'manager':
+        return 'Manager';
+      case 'admin':
+        return 'Admin';
       case 'planned':
         return 'Planned';
       case 'active':
@@ -85,29 +91,71 @@ class Activity {
     final oldValue = _formatValue(rawOld);
     final newValue = _formatValue(rawNew);
 
+    final actor =
+        (actorName != null &&
+            actorName!.isNotEmpty &&
+            actorName != 'Unknown User')
+        ? actorName!
+        : null;
+
+    final targetName = metadata?['name'] ?? title;
+
     switch (action) {
       case 'task_created':
-        return 'Task "$title" was created';
+        return actor != null
+            ? '$actor created task "$title"'
+            : 'Task "$title" was created';
       case 'task_updated':
-        return 'Task "$title" was updated';
+        return actor != null
+            ? '$actor updated task "$title"'
+            : 'Task "$title" was updated';
       case 'task_deleted':
-        return 'Task "$title" was deleted';
+        return actor != null
+            ? '$actor deleted task "$title"'
+            : 'Task "$title" was deleted';
       case 'task_status_changed':
-        return 'Task "$title" status changed from $oldValue to $newValue';
+        return actor != null
+            ? '$actor changed task "$title" status from $oldValue to $newValue'
+            : 'Task "$title" status changed from $oldValue to $newValue';
       case 'task_priority_changed':
-        return 'Task "$title" priority changed from $oldValue to $newValue';
+        return actor != null
+            ? '$actor changed task "$title" priority from $oldValue to $newValue'
+            : 'Task "$title" priority changed from $oldValue to $newValue';
       case 'task_assigned_changed':
-        return 'Task "$title" was reassigned';
+        return actor != null
+            ? '$actor reassigned task "$title"'
+            : 'Task "$title" was reassigned';
       case 'task_project_changed':
-        return 'Task "$title" was moved to another project';
+        return actor != null
+            ? '$actor moved task "$title" to another project'
+            : 'Task "$title" was moved to another project';
       case 'comment_created':
-        return 'New comment added on task "$title"';
+        return actor != null
+            ? '$actor added a comment on task "$title"'
+            : 'New comment added on task "$title"';
       case 'comment_updated':
-        return 'Comment was updated';
+        return actor != null
+            ? '$actor updated a comment on task "$title"'
+            : (title.isNotEmpty && title != entityId
+                  ? 'Comment on task "$title" was updated'
+                  : 'Comment was updated');
       case 'comment_deleted':
-        return 'Comment was deleted';
+        return actor != null
+            ? '$actor deleted a comment on task "$title"'
+            : (title.isNotEmpty && title != entityId
+                  ? 'Comment on task "$title" was deleted'
+                  : 'Comment was deleted');
+      case 'user_role_changed':
+        final subject = targetName.isNotEmpty && targetName != entityId
+            ? targetName
+            : 'user';
+        return actor != null
+            ? '$actor changed $subject\'s role from $oldValue to $newValue'
+            : 'Role for $subject changed from $oldValue to $newValue';
       default:
-        return '$entityType was $action';
+        return actor != null
+            ? '$actor performed $action on $entityType'
+            : '$entityType was $action';
     }
   }
 

@@ -6,21 +6,26 @@ from app.core.roles import require_roles
 from app.core.security import hash_password, generate_temporary_password
 from app.database.dependencies import (
     get_user_collection,
-    get_employee_collection
+    get_employee_collection,
+    get_team_collection,
+    get_activity_collection,
 )
 from app.schemas.employee_schema import (
     EmployeeCreateSchema,
     EmployeeUpdateSchema,
+    EmployeeRoleUpdateSchema,
     EmployeeResponseSchema,
-    EmployeeCreateResponseSchema
+    EmployeeCreateResponseSchema,
 )
 from app.services.employee_service import (
     create_employee,
     get_all_employees,
     get_employee_by_id,
     update_employee,
-    deactivate_employee
+    deactivate_employee,
+    update_employee_role,
 )
+from app.services.activity_service import log_activity
 
 router = APIRouter(
     prefix="/employees",
@@ -72,14 +77,20 @@ async def add_employee(
 
 
 @router.get(
+    "",
+    response_model=List[EmployeeResponseSchema],
+    include_in_schema=False
+)
+@router.get(
     "/",
     response_model=List[EmployeeResponseSchema]
 )
 async def list_employees(
     collection=Depends(get_employee_collection),
+    user_collection=Depends(get_user_collection),
     current_user=Depends(require_roles("admin", "manager"))
 ):
-    return await get_all_employees(collection)
+    return await get_all_employees(collection, user_collection=user_collection)
 
 
 @router.get(
@@ -175,3 +186,42 @@ async def deactivate(
     return {
         "message": "Employee deactivated successfully"
     }
+
+
+@router.patch(
+    "/{employee_id}/role",
+    response_model=EmployeeResponseSchema
+)
+async def change_employee_role(
+    employee_id: str,
+    payload: EmployeeRoleUpdateSchema,
+    employee_collection=Depends(get_employee_collection),
+    user_collection=Depends(get_user_collection),
+    team_collection=Depends(get_team_collection),
+    activity_collection=Depends(get_activity_collection),
+    current_user=Depends(require_roles("admin")),
+):
+    updated_employee, old_role = await update_employee_role(
+        employee_collection=employee_collection,
+        user_collection=user_collection,
+        team_collection=team_collection,
+        employee_id=employee_id,
+        new_role=payload.role,
+        actor_user_id=current_user["user_id"],
+    )
+
+    if old_role != payload.role:
+        await log_activity(
+            activity_collection=activity_collection,
+            actor_user_id=current_user["user_id"],
+            action="user_role_changed",
+            entity_type="employee",
+            entity_id=employee_id,
+            metadata={
+                "old_value": old_role,
+                "new_value": payload.role,
+                "name": updated_employee.get("name"),
+            },
+        )
+
+    return updated_employee

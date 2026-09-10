@@ -255,3 +255,14 @@
 ## Decision 043: CORSMiddleware Configuration for Flutter Web Integration
 - **Context:** Flutter Web development on localhost / 127.0.0.1 sends cross-origin `OPTIONS` preflight requests for authenticated mutation endpoints (`/auth/register`, `/auth/login`, etc.) requiring permissive local CORS handling without compromising production origin security.
 - **Decision:** Configure `fastapi.middleware.cors.CORSMiddleware` in `app/main.py` using `cors_origins` list and `cors_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"`, enabling `allow_credentials=True`, methods `["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"]`, and explicit/wildcard request headers. This allows dynamic Flutter Web ephemeral debugging ports on localhost/127.0.0.1 while strictly rejecting untrusted origins.
+
+---
+
+## Decision 044: Admin User & Role Management with Two-Phase Synchronization and Safety Protections
+- **Context:** Organizational role changes require atomic updates across both `employees` and `users` collections, prevention of lockout (self-demotion / last-admin removal), and prevention of orphaned teams when demoting managers.
+- **Decision:** Implement `PATCH /employees/{employee_id}/role` restricted strictly to callers with the `admin` role. Target role may be `employee`, `manager`, or `admin`. Apply safety constraints:
+  1. **Self-demotion prevention:** Reject caller modifying their own role with `403 Forbidden` (`Administrators cannot change their own role.`).
+  2. **Last-admin protection:** Query `users` count where `role == "admin"`; if count is 1 and target is that admin, reject with `409 Conflict` (`Cannot remove the last administrator.`).
+  3. **Team-manager safety:** Query `teams` where `manager_id` matches the employee's ID (`str(employee["_id"])` or `ObjectId`); if any teams are managed, reject demotion with `409 Conflict` (`Cannot demote {name}. They are currently managing {count} team(s). Reassign those teams first.`).
+  4. **Two-phase synchronization with rollback:** Update `employees.role` first, then `users.role`. If updating `users` fails, compensate/roll back `employees.role`; if rollback fails, return `500 Internal Server Error`.
+  5. **Activity audit trail:** Create exactly one `user_role_changed` activity log per successful role modification.

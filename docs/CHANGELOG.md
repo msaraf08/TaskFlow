@@ -1,6 +1,22 @@
 # Changelog
 
-## v0.8.1 - Person-Name Resolution & Display Enrichment
+## v0.9.0 - Phase 7.5: Admin User & Role Management
+
+### Added
+- Backend endpoint `PATCH /employees/{employee_id}/role` strictly restricted to `admin` callers (`require_roles("admin")`), accepting target roles `employee`, `manager`, or `admin`.
+- Two-phase role synchronization between `employees.role` and `users.role` with automatic rollback on secondary update failure.
+- Self-demotion prevention returning `403 Forbidden` (`Administrators cannot change their own role.`).
+- Last-admin protection returning `409 Conflict` (`Cannot remove the last administrator.`).
+- Team-manager safety check returning `409 Conflict` (`Cannot demote {name}. They are currently managing {count} team(s). Reassign those teams first.`) if demoting an active team manager to non-manager.
+- Activity audit logging capturing `user_role_changed` with metadata (`old_value`, `new_value`, `name`).
+- Frontend `ApiClient.patch` method.
+- Flutter `TeamProvider.updateEmployeeRole(employeeId, newRole)` method.
+- Admin-only `UserManagementScreen` with user listing, current role display, disabled self-modification, role selection dialog, confirmation modal, and accessible semantics.
+- Admin drawer in `MainNavigationScreen` exposing "User Management" exclusively to administrators.
+### Fixed
+- Fixed `ResponseValidationError` on `GET /employees/` by normalizing `joining_date` in `auth.py` and `employee_service.py` to zero-time `datetime`/`date` instances and defining both `/employees` and `/employees/` routes.
+- Enhanced Activity formatting across Dashboard and Activity Stream to prominently show actor names alongside resolved task titles (e.g. `"Neha added a comment on task \"Implement User Authentication\""`, `"Amit Sharma changed task \"Implement User Authentication\" priority from Low to High"`, `"Raj changed Amit Sharma's role from Employee to Manager"`).
+- Updated `TeamProvider.fetchEmployees()` to manage loading states, track errors, and properly notify listeners.
 
 ### Added
 - Backend response enrichment for Activity (`actor_name`), Comment (`author_name`), and Task (`assignee_name`) schemas with batch `$in` lookups to prevent N+1 queries.

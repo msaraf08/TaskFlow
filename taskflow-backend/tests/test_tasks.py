@@ -13,7 +13,7 @@ async def setup_task_test_data(
     # 1. Admin
     admin_user = await mock_users_collection.insert_one({
         "name": "Admin User",
-        "email": "admin@taskflow.local",
+        "email": "admin@taskflow.com",
         "password": hash_password("AdminPass123"),
         "role": "admin",
         "status": "active"
@@ -23,7 +23,7 @@ async def setup_task_test_data(
     admin_emp = await mock_employees_collection.insert_one({
         "user_id": admin_user_id,
         "name": "Admin User",
-        "email": "admin@taskflow.local",
+        "email": "admin@taskflow.com",
         "phone": "1000000000",
         "department": "Exec",
         "role": "admin",
@@ -34,7 +34,7 @@ async def setup_task_test_data(
     # 2. Manager 1
     m1_user = await mock_users_collection.insert_one({
         "name": "Manager One",
-        "email": "m1@taskflow.local",
+        "email": "m1@taskflow.com",
         "password": hash_password("ManagerPass123"),
         "role": "manager",
         "status": "active"
@@ -44,7 +44,7 @@ async def setup_task_test_data(
     m1_emp = await mock_employees_collection.insert_one({
         "user_id": m1_user_id,
         "name": "Manager One",
-        "email": "m1@taskflow.local",
+        "email": "m1@taskflow.com",
         "phone": "1111111111",
         "department": "Engineering",
         "role": "manager",
@@ -55,7 +55,7 @@ async def setup_task_test_data(
     # 3. Manager 2
     m2_user = await mock_users_collection.insert_one({
         "name": "Manager Two",
-        "email": "m2@taskflow.local",
+        "email": "m2@taskflow.com",
         "password": hash_password("ManagerPass123"),
         "role": "manager",
         "status": "active"
@@ -65,7 +65,7 @@ async def setup_task_test_data(
     m2_emp = await mock_employees_collection.insert_one({
         "user_id": m2_user_id,
         "name": "Manager Two",
-        "email": "m2@taskflow.local",
+        "email": "m2@taskflow.com",
         "phone": "2222222222",
         "department": "Marketing",
         "role": "manager",
@@ -76,7 +76,7 @@ async def setup_task_test_data(
     # 4. Employee 1 (Team 1 member)
     e1_user = await mock_users_collection.insert_one({
         "name": "Employee One",
-        "email": "e1@taskflow.local",
+        "email": "e1@taskflow.com",
         "password": hash_password("EmployeePass123"),
         "role": "employee",
         "status": "active"
@@ -86,7 +86,7 @@ async def setup_task_test_data(
     e1_emp = await mock_employees_collection.insert_one({
         "user_id": e1_user_id,
         "name": "Employee One",
-        "email": "e1@taskflow.local",
+        "email": "e1@taskflow.com",
         "phone": "3333333333",
         "department": "Engineering",
         "role": "employee",
@@ -97,7 +97,7 @@ async def setup_task_test_data(
     # 5. Employee 2 (Team 2 member)
     e2_user = await mock_users_collection.insert_one({
         "name": "Employee Two",
-        "email": "e2@taskflow.local",
+        "email": "e2@taskflow.com",
         "password": hash_password("EmployeePass123"),
         "role": "employee",
         "status": "active"
@@ -107,7 +107,7 @@ async def setup_task_test_data(
     e2_emp = await mock_employees_collection.insert_one({
         "user_id": e2_user_id,
         "name": "Employee Two",
-        "email": "e2@taskflow.local",
+        "email": "e2@taskflow.com",
         "phone": "4444444444",
         "department": "Marketing",
         "role": "employee",
@@ -118,7 +118,7 @@ async def setup_task_test_data(
     # 6. Inactive Employee
     inact_user = await mock_users_collection.insert_one({
         "name": "Inactive User",
-        "email": "inactive@taskflow.local",
+        "email": "inactive@taskflow.com",
         "password": hash_password("InactivePass123"),
         "role": "employee",
         "status": "inactive"
@@ -128,7 +128,7 @@ async def setup_task_test_data(
     inact_emp = await mock_employees_collection.insert_one({
         "user_id": inact_user_id,
         "name": "Inactive Employee",
-        "email": "inactive@taskflow.local",
+        "email": "inactive@taskflow.com",
         "phone": "9999999999",
         "department": "Engineering",
         "role": "employee",

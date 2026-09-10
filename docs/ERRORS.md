@@ -219,3 +219,31 @@ pip install bcrypt==4.3.0
 ### Duplicate or Unexpected Generic `task_updated` Action on Single-Field Edits
 - **Cause:** Form submissions that send the entire task schema (e.g. including `due_date`, `description`, etc.) caused false-positive dirty field detections due to type differences between Python `date`/`datetime` and MongoDB stored formats (`datetime.datetime` vs `datetime.date`), triggering `task_updated` instead of the specific field action (e.g. `task_priority_changed`).
 - **Resolution:** Task update comparison normalizes types (e.g. ISO date substring formatting, whitespace stripping, and None/empty string equivalence) across all mutable fields (`due_date`, `title`, `description`, `project_id`, `assigned_to`, `status`, `priority`) before evaluating changed fields count. Single-field modifications log only the specific action (`task_priority_changed`, `task_status_changed`, `task_assigned_changed`, `task_project_changed`), multi-field modifications log `task_updated`, and zero-change submissions log no new activity.
+
+---
+
+## 11. User & Role Management Error Scenarios (`PATCH /employees/{id}/role`)
+
+### HTTP 403 Forbidden
+- **Cause 1 (Non-Admin Caller):** A caller with role `employee` or `manager` attempted to call `PATCH /employees/{id}/role`.
+  - *Resolution:* Only administrators (`role: admin`) are authorized to update user roles.
+- **Cause 2 (Self-Demotion Attempt):** An administrator attempted to change their own role.
+  - *Resolution:* Administrators cannot modify their own roles ("Administrators cannot change their own role."). Another administrator must execute the change.
+
+### HTTP 409 Conflict
+- **Cause 1 (Last Administrator Protection):** An administrator attempted to demote the only remaining administrator in the system.
+  - *Resolution:* Create or promote another user to `admin` before changing the last administrator's role ("Cannot remove the last administrator.").
+- **Cause 2 (Demoting Active Team Manager):** An administrator attempted to demote a Manager or Admin who is currently listed as `manager_id` on one or more active teams.
+  - *Resolution:* Reassign or remove the manager from the affected teams before demoting them ("Cannot demote {name}. They are currently managing {count} team(s). Reassign those teams first.").
+
+### HTTP 500 Internal Server Error
+- **Cause (Two-Phase Sync and Rollback Failure):** During `update_employee_role`, the `employees` update succeeded but the `users` update failed, and subsequent compensation/rollback to restore `employees` also failed.
+  - *Resolution:* Check database connectivity and inspect the employee and user documents for inconsistency.
+
+---
+
+## 12. Employee Listing & Date Serialization
+
+### ResponseValidationError on `GET /employees/`
+- **Cause:** Inexact `datetime` instances (containing non-zero time components like `datetime.now(timezone.utc)`) inserted into MongoDB employee records failed Pydantic v2 validation against `joining_date: Optional[date]`.
+- **Resolution:** All employee creation paths (`auth.py` and `employee_service.py`) now store normalized `datetime.combine(date, time.min)` and employee retrieval services (`get_all_employees`, `get_employee_by_id`) sanitize `joining_date` values to `date` objects. Router also defines both `/employees` and `/employees/` paths to avoid 307 redirects.

@@ -60,6 +60,7 @@ taskflow-app/lib/
 |-- models/          # Type-safe Dart models mapped to backend Pydantic schemas
 |-- providers/       # State management using Provider + ChangeNotifier
 |-- screens/         # UI screens organized by domain feature
+|   |-- admin/       # User and Role Management (Admin only)
 |   |-- auth/        # Login, Register
 |   |-- dashboard/   # Metrics overview, status charts, quick actions
 |   |-- teams/       # Team list, details, create/edit form
@@ -67,7 +68,7 @@ taskflow-app/lib/
 |   |-- tasks/       # Task list, details, create/edit form, filters
 |   |-- activities/  # Paginated activity audit feed
 |   |-- profile/     # User profile, password update dialog
-|   `-- main_navigation_screen.dart # Tab navigation & app shell
+|   `-- main_navigation_screen.dart # Tab navigation, admin drawer, app shell
 |-- widgets/         # Reusable UI widgets (Badges, Empty states, Dialogs, Comments)
 `-- main.dart        # MultiProvider initialization and root auth state gate
 ```
@@ -111,7 +112,12 @@ taskflow-app/lib/
 
 - **Authentication**: JWT Bearer tokens signed with SHA-256 HMAC (30-minute expiration).
 - **Authorization**: Backend RBAC on all endpoints across `admin`, `manager`, and `employee` roles.
-  - Admins: Unrestricted access to all resources.
+  - Admins: Unrestricted access to all resources; ability to reassign user roles via `PATCH /employees/{id}/role`.
   - Managers: Scoped to teams they lead (`team.manager_id`), projects belonging to those teams, and tasks within those projects.
   - Employees: Scoped to teams they belong to (`team.member_ids`), projects under those teams, and tasks assigned to them or within their teams.
+- **Role Management Safety & Synchronization**:
+  - `PATCH /employees/{id}/role` enforces two-phase synchronization with rollback between `employees.role` and `users.role`.
+  - Self-demotion is strictly prevented (403 Forbidden).
+  - Last-admin protection prevents removing the final system administrator (409 Conflict).
+  - Active team manager safety prevents demoting managers leading active teams (409 Conflict).
 - **Rate Limiting**: 5 requests per 60 seconds per IP on sensitive authentication routes (`/auth/login`, `/auth/register`, `/auth/password`).

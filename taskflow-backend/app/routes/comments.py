@@ -127,7 +127,10 @@ async def add_comment(
         task_id=task_id,
         project_id=task["project_id"],
         team_id=str(team["_id"]),
-        metadata={"content_preview": comment_in.content[:100]},
+        metadata={
+            "content_preview": comment_in.content[:100],
+            "title": task.get("title", ""),
+        },
         user_collection=user_collection,
     )
 
@@ -231,7 +234,10 @@ async def edit_comment(
         task_id=comment["task_id"],
         project_id=task["project_id"],
         team_id=str(team["_id"]),
-        metadata={"content_preview": comment_in.content[:100]},
+        metadata={
+            "content_preview": comment_in.content[:100],
+            "title": task.get("title", ""),
+        },
         user_collection=user_collection,
     )
 
@@ -300,7 +306,10 @@ async def remove_comment(
         task_id=comment["task_id"],
         project_id=task["project_id"],
         team_id=str(team["_id"]),
-        metadata={"content_preview": content_preview},
+        metadata={
+            "content_preview": content_preview,
+            "title": task.get("title", ""),
+        },
     )
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -209,7 +209,7 @@ class _ActivityListScreenState extends State<ActivityListScreen> {
                       );
 
                       return Semantics(
-                        label: '$actorName performed: $description',
+                        label: description,
                         container: true,
                         child: Card(
                           margin: const EdgeInsets.only(bottom: 12.0),

@@ -298,7 +298,7 @@ volumes:
 | Docker | 🟡 PARTIALLY IMPLEMENTED | `compose.yaml` runs MongoDB & Redis; backend Dockerfile planned for Phase 8. |
 | Authentication | ✅ IMPLEMENTED | Registration, login, profile (`/auth/me`), password change (`/auth/password`), bcrypt hashing, JWT issuance and validation, Flutter auth flow with secure token persistence. |
 | Authorization | ✅ IMPLEMENTED | Role checks (`admin`, `manager`, `employee`), active account enforcement, team ownership, project scoping, task assignment eligibility, and activity visibility scoping. |
-| User management | ✅ IMPLEMENTED | Secured registration, bootstrap admin, user profile, password change, user status sync. |
+| User management | ✅ IMPLEMENTED | Secured registration, bootstrap admin, user profile, password change, user status sync, admin user & role management (`PATCH /employees/{id}/role`) with two-phase synchronization, self-demotion prevention, last-admin protection, and team-manager safety checks. |
 | Employee management | ✅ IMPLEMENTED | Full CRUD with response models and random password generation. |
 | Employee deactivation | ✅ IMPLEMENTED | Soft-deactivation with synchronized user account revocation. |
 | Team management | ✅ IMPLEMENTED | Full CRUD with partial updates, ownership authorization, single-source-of-truth membership, and detail caching. |
@@ -312,16 +312,16 @@ volumes:
 | Activity / Audit Trail | ✅ IMPLEMENTED | Service-layer activity logging helper (`log_activity`), field change tracking, metadata sanitization, and scoped filtering. |
 | Dashboard | ✅ IMPLEMENTED | Overview metric summaries (teams, projects, tasks, overdue), status breakdowns, recent task shortcuts, recent activities. |
 | Notifications | ❌ NOT IMPLEMENTED | Planned for future phase. |
-| Flutter frontend | ✅ IMPLEMENTED | Complete Flutter Material 3 application with authentication, navigation, team/project/task/comment/activity workflows, and responsive UI. |
+| Flutter frontend | ✅ IMPLEMENTED | Complete Flutter Material 3 application with authentication, navigation, team/project/task/comment/activity workflows, Admin User Management screen, and responsive UI. |
 | API integration | ✅ IMPLEMENTED | Centralized `ApiClient` consuming FastAPI endpoints with Bearer token authentication and typed exception handling. |
-| Testing | ✅ IMPLEMENTED | 50 backend pytest tests + 20 Flutter unit/model/validator/widget tests passing. |
+| Testing | ✅ IMPLEMENTED | 61 backend pytest tests + 46 Flutter unit/model/validator/widget tests passing. |
 | Documentation | ✅ IMPLEMENTED | `API.md`, `DATABASE.md`, `SETUP.md`, `DECISIONS.md`, `ERRORS.md`, `CHANGELOG.md`, and `AUDIT.md` fully updated. |
 
 ---
 
 ## 13. Current Issues and Technical Debt
 
-### 13.1 Phase 0–7 Resolved Issues
+### 13.1 Phase 0–7.5 Resolved Issues
 
 1. ✅ **Privilege Escalation via Self-Registration:** Fixed in `app/schemas/user_schema.py` & `app/routes/auth.py`.
 2. ✅ **Hardcoded Initial Password:** Fixed in `app/core/security.py` & `app/routes/employees.py`.
@@ -337,19 +337,20 @@ volumes:
 12. ✅ **Rate Limiting Protection:** Added Redis fixed-window rate limiter on auth routes (5 req/60s).
 13. ✅ **Detail Endpoint Caching:** Added 300s TTL cache on `teams`, `projects`, `tasks` with exact key invalidation on write.
 14. ✅ **Flutter Client Integration & Accessibility:** Complete Flutter app implementation with Provider state management, typed HTTP exception handling, 48x48 dp minimum touch targets, accessible badges (icon + text), and responsive forms.
-15. ✅ **Missing Automated Tests:** 50 pytest tests for backend + 20 Flutter tests for frontend client passing at 100%.
+15. ✅ **Admin User & Role Management (Phase 7.5):** Implemented `PATCH /employees/{id}/role` with two-phase synchronization, rollback compensation, self-demotion prevention (403), last-admin protection (409), team-manager safety check (409), audit logging (`user_role_changed`), and Flutter `UserManagementScreen`.
+16. ✅ **Missing Automated Tests:** 61 pytest tests for backend + 46 Flutter tests for frontend client passing at 100%.
 
 ---
 
 ## 14. Testing Status
 
-- **Backend Framework:** Pytest 9.1.1 with pytest-asyncio and httpx (50 passed in ~32.3s).
-- **Frontend Framework:** Flutter Test (20 passed).
+- **Backend Framework:** Pytest 9.1.1 with pytest-asyncio and httpx (61 passed).
+- **Frontend Framework:** Flutter Test (46 passed).
 - **Frontend Test Coverage:**
   - `Validators`: RFC email, password length, new password comparison, name length, description constraints, date range ordering.
-  - `Models`: Serialization / `fromJson` / `toJson` / `copyWith` / getters for `User`, `Employee`, `Team`, `Project`, `Task`, `Comment`, `Activity`.
-  - `ApiClient`: Successful response decoding, Bearer header injection, typed exception translation (`400`, `401`, `403`, `404`, `422`, `500`), auto-logout on `401`.
-  - `Widgets`: `StatusBadge` (icon + text), `PriorityBadge` (icon + text), `AppEmptyState`, `AppErrorWidget`, `ConfirmationDialog`, `LoginScreen` validation errors.
+  - `Models`: Serialization / `fromJson` / `toJson` / `copyWith` / getters for `User`, `Employee`, `Team`, `Project`, `Task`, `Comment`, `Activity` (`user_role_changed` description formatting).
+  - `ApiClient`: Successful response decoding, Bearer header injection, `patch` method, typed exception translation (`400`, `401`, `403`, `404`, `409`, `422`, `500`), auto-logout on `401`.
+  - `Widgets`: `StatusBadge` (icon + text), `PriorityBadge` (icon + text), `AppEmptyState`, `AppErrorWidget`, `ConfirmationDialog`, `LoginScreen` validation errors, `MainNavigationScreen` admin drawer, `UserManagementScreen` role transitions and 409 conflict handling.
 
 ---
 
@@ -363,10 +364,11 @@ volumes:
 - **Phase 5:** ✅ Comments & Activity Audit Trail *(Completed)*
 - **Phase 6:** ✅ Redis Integration (Caching, Invalidation & Auth Rate Limiting) *(Completed)*
 - **Phase 7:** ✅ Flutter Frontend Application *(Completed)*
+- **Phase 7.5:** ✅ Admin User & Role Management *(Completed)*
 - **Phase 8:** Containerization & Production Packaging
 
 ---
 
 ## 16. Audit Summary
 
-Phase 7 has successfully delivered a cross-platform Flutter frontend client for TaskFlow located in `taskflow-app/`. The client application cleanly consumes all FastAPI endpoints (Phases 0–6) through a centralized `ApiClient` with typed exception translation and Bearer JWT authentication persisted securely via `flutter_secure_storage`. State management is structured cleanly with `Provider` and `ChangeNotifier`. Comprehensive UI screens support role-based operations for Admins, Managers, and Employees across Authentication, Dashboard, Teams, Projects, Tasks, Comments, Activities, and Profile management. All accessibility guidelines (icons + text, >=48dp touch targets, semantic forms) and frontend validation rules strictly mirroring backend schemas are enforced. Automated verification includes 20 passing Flutter tests alongside 50 passing backend pytest tests with zero backend regressions.
+Phase 7.5 has successfully implemented Admin User & Role Management across backend and frontend. The backend endpoint `PATCH /employees/{id}/role` restricts invocation to `admin` callers and synchronizes `employees.role` and `users.role` with two-phase rollback safety, protecting against self-demotion (403), last-admin removal (409), and demotion of active team managers (409). The Flutter client provides an Admin-only `UserManagementScreen` accessible from a dedicated navigation drawer, featuring real-time employee listing, disabled self-modification, role change dialogs, confirmation modals, error SnackBars, and accessible semantics. Automated verification passes with 61 backend pytest tests (100%) and 46 Flutter tests (100%) with zero analyzer issues.

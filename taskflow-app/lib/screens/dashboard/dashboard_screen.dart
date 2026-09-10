@@ -368,6 +368,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       : actProv.activities.length,
                   itemBuilder: (context, index) {
                     final act = actProv.activities[index];
+                    final taskTitles = {
+                      for (final t in taskProv.tasks) t.id: t.title,
+                    };
+                    final description = act.formatDescription(
+                      taskTitles: taskTitles,
+                    );
                     return Card(
                       margin: const EdgeInsets.only(bottom: 8),
                       child: ListTile(
@@ -379,7 +385,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ),
                         ),
                         title: Text(
-                          act.humanReadableDescription,
+                          description,
                           style: const TextStyle(fontWeight: FontWeight.w500),
                         ),
                         subtitle: Text(act.formattedDate),
