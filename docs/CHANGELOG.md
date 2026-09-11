@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.1.0 - Phase 9: Practical Enhancements (Deactivation, Task Filtering & Search, Dashboard)
+
+### Added
+- Backend account deactivation (`PATCH /employees/{employee_id}/deactivate`) and reactivation (`PATCH /employees/{employee_id}/reactivate`) restricted strictly to administrators.
+- Comprehensive deactivation guards: self-deactivation prevention (`403 Forbidden`), last active administrator protection (`409 Conflict`), and active team manager guard (`409 Conflict` prompting team reassignment).
+- Synchronized status transitions across `employees` and `users` collections (`active` / `inactive`) with two-phase rollback on failure.
+- Audit trail logging for `user_deactivated` and `user_reactivated` actions with actor metadata.
+- Backend task filtering on `GET /tasks/` by `status`, `priority`, `assigned_to`, `project_id`, `due_date`, and `overdue` (boolean).
+- Sanitized task text search (`search` parameter) filtering title and description via escaped regular expressions (`re.escape`).
+- Compound MongoDB indexes on `tasks` collection: `(status, due_date)`, `(assigned_to, status)`, and `(project_id, status)`.
+- Authoritative backend RBAC preserved across all task query filters for Admin, Manager, and Employee roles.
+- Flutter `TeamProvider` methods `deactivateEmployee` and `reactivateEmployee` with status state management.
+- Flutter `UserManagementScreen` status filter chips (All / Active / Inactive), user status badges, action menus with confirmation dialogs, and disabled self-deactivation.
+- Flutter `TaskProvider` support for task search, due date, and overdue filtering.
+- Flutter `TaskListScreen` real-time search bar with debouncing, multi-filter dropdowns/chips (Status, Priority, Project, Overdue), and clear filters action.
+- Flutter `DashboardScreen` client-side computed metrics (My Tasks, Due Today, Overdue, Total Tasks), responsive grid layout (360x640 compatible), and screen reader accessibility semantics.
+- Flutter `TaskFormScreen` and backend task creation/update schemas enhanced to support optional task due dates.
+- Registration Profile Enhancement: optional `phone` and `department` fields exposed in `UserCreateSchema`, `register_user` endpoint, `AuthProvider.register()`, and `RegisterScreen` with strict rejection (`422`) of client-supplied `role` or `status` overrides.
+- Admin Employee Profile Management: Backend endpoint `PATCH /employees/{employee_id}` allowing administrators to edit `name`, `phone`, and `department` with automatic two-phase user synchronization on name changes and strict `extra="forbid"` rejection of system-controlled/unknown fields.
+- Flutter User Management Profile Dialog: Added "View Profile" dialog on `UserManagementScreen` with editable Full Name, Phone Number, Department and read-only Email, Role, Joining Date, and Status badges.
+- Backend unit and integration tests covering employee deactivation/reactivation lifecycle, task query/search filters, registration profile fields, and admin profile updates (72 backend tests passing).
+- Flutter widget and unit tests covering deactivation dialogs, task search/filter interactions, due date handling, registration profile submissions, and profile editing (55 tests passing).
+
 ## v1.0.0 - Phase 8: Dockerization & Deployment Readiness
 
 ### Added

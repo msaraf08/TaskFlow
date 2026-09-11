@@ -93,6 +93,98 @@ class TeamProvider extends ChangeNotifier {
     }
   }
 
+  Future<Employee> updateEmployeeProfile(
+    String employeeId, {
+    String? name,
+    String? phone,
+    String? department,
+  }) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final body = <String, dynamic>{};
+      if (name != null) body['name'] = name;
+      if (phone != null) body['phone'] = phone;
+      if (department != null) body['department'] = department;
+
+      final response = await _client.patch(
+        '/employees/$employeeId',
+        body: body,
+      );
+      final updated = Employee.fromJson(response as Map<String, dynamic>);
+      final index = _employees.indexWhere((e) => e.id == employeeId);
+      if (index != -1) {
+        _employees[index] = updated;
+      }
+      _isLoading = false;
+      notifyListeners();
+      return updated;
+    } catch (e) {
+      _isLoading = false;
+      _errorMessage = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<void> deactivateEmployee(String employeeId) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final response = await _client.patch(
+        '/employees/$employeeId/deactivate',
+      );
+      if (response is Map<String, dynamic> && response['employee'] != null) {
+        final updated = Employee.fromJson(response['employee'] as Map<String, dynamic>);
+        final index = _employees.indexWhere((e) => e.id == employeeId);
+        if (index != -1) {
+          _employees[index] = updated;
+        }
+      } else {
+        await fetchEmployees();
+      }
+      _isLoading = false;
+      notifyListeners();
+    } catch (e) {
+      _isLoading = false;
+      _errorMessage = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<void> reactivateEmployee(String employeeId) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final response = await _client.patch(
+        '/employees/$employeeId/reactivate',
+      );
+      if (response is Map<String, dynamic> && response['employee'] != null) {
+        final updated = Employee.fromJson(response['employee'] as Map<String, dynamic>);
+        final index = _employees.indexWhere((e) => e.id == employeeId);
+        if (index != -1) {
+          _employees[index] = updated;
+        }
+      } else {
+        await fetchEmployees();
+      }
+      _isLoading = false;
+      notifyListeners();
+    } catch (e) {
+      _isLoading = false;
+      _errorMessage = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
   Future<Team?> getTeam(String teamId) async {
     try {
       final response = await _client.get('/teams/$teamId');

@@ -13,7 +13,7 @@ class TaskCreateSchema(BaseModel):
     assigned_to: str = Field(..., min_length=1)
     priority: TaskPriority = "medium"
     status: TaskStatus = "todo"
-    due_date: date
+    due_date: Optional[date] = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -59,7 +59,7 @@ class TaskResponseSchema(BaseModel):
     assignee_name: Optional[str] = None
     priority: str
     status: str
-    due_date: date
+    due_date: Optional[date] = None
     created_by: str
     created_at: datetime
     updated_at: datetime

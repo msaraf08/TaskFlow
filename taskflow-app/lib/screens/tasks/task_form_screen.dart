@@ -121,6 +121,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
           priority: _selectedPriority,
           status: _selectedStatus,
           dueDate: _dueDate,
+          clearDueDate: _dueDate == null && widget.task?.hasDueDate == true,
           isEmployeeRole: isEmployee,
         );
       } else {
@@ -315,18 +316,36 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                 ],
               ),
               const SizedBox(height: 16),
-              OutlinedButton.icon(
-                onPressed: () => _selectDueDate(context),
-                icon: const Icon(Icons.calendar_today),
-                label: Text(
-                  _dueDate != null
-                      ? 'Due Date: ${dateFormat.format(_dueDate!)}'
-                      : 'Set Due Date (Optional)',
-                ),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  alignment: Alignment.centerLeft,
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _selectDueDate(context),
+                      icon: const Icon(Icons.calendar_today),
+                      label: Text(
+                        _dueDate != null
+                            ? 'Due Date: ${dateFormat.format(_dueDate!)}'
+                            : 'Set Due Date (Optional)',
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        alignment: Alignment.centerLeft,
+                      ),
+                    ),
+                  ),
+                  if (_dueDate != null) ...[
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: const Icon(Icons.clear),
+                      tooltip: 'Clear Due Date',
+                      onPressed: () {
+                        setState(() {
+                          _dueDate = null;
+                        });
+                      },
+                    ),
+                  ],
+                ],
               ),
               const SizedBox(height: 32),
               FilledButton(

@@ -6,6 +6,8 @@ class UserCreateSchema(BaseModel):
     name: str = Field(..., min_length=1)
     email: EmailStr
     password: str = Field(..., min_length=8)
+    phone: Optional[str] = Field(None, max_length=20)
+    department: Optional[str] = Field(None, max_length=100)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -14,6 +16,14 @@ class UserCreateSchema(BaseModel):
     def strip_name(cls, v: str) -> str:
         if isinstance(v, str):
             return v.strip()
+        return v
+
+    @field_validator("phone", "department", mode="before")
+    @classmethod
+    def strip_optional_str(cls, v: Optional[str]) -> Optional[str]:
+        if isinstance(v, str):
+            v_stripped = v.strip()
+            return v_stripped if v_stripped else None
         return v
 
 

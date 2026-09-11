@@ -25,7 +25,8 @@ from app.services.task_service import (
     get_task_by_id,
     update_task,
     delete_task,
-    validate_project_and_team
+    validate_project_and_team,
+    build_task_filter_query,
 )
 from app.services.activity_service import log_activity
 from app.services.comment_service import delete_comments_by_task_id
@@ -95,6 +96,11 @@ async def add_task(
 async def list_tasks(
     project_id: Optional[str] = Query(None),
     assigned_to: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    priority: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    due_date: Optional[str] = Query(None),
+    overdue: Optional[bool] = Query(None),
     task_collection=Depends(get_task_collection),
     project_collection=Depends(get_project_collection),
     team_collection=Depends(get_team_collection),
@@ -104,11 +110,33 @@ async def list_tasks(
 ):
     role = current_user.get("role")
 
+    user_filters = build_task_filter_query(
+        status=status,
+        priority=priority,
+        search=search,
+        due_date=due_date,
+        overdue=overdue,
+    )
+    user_filter_clauses = [user_filters] if user_filters else []
+
     if role == "admin":
-        return await get_all_tasks(
+        admin_clauses = []
+        if project_id:
+            admin_clauses.append({"project_id": project_id})
+        if assigned_to:
+            admin_clauses.append({"assigned_to": assigned_to})
+        admin_clauses.extend(user_filter_clauses)
+
+        if not admin_clauses:
+            final_query = {}
+        elif len(admin_clauses) == 1:
+            final_query = admin_clauses[0]
+        else:
+            final_query = {"$and": admin_clauses}
+
+        return await get_tasks_by_filter(
             task_collection,
-            project_id=project_id,
-            assigned_to=assigned_to,
+            final_query,
             employee_collection=employee_collection,
             user_collection=user_collection,
         )
@@ -138,17 +166,24 @@ async def list_tasks(
         if not managed_project_ids:
             return []
 
-        filter_query: dict = {"project_id": {"$in": managed_project_ids}}
+        if project_id and project_id not in managed_project_ids:
+            return []
+
+        manager_clauses = []
         if project_id:
-            if project_id not in managed_project_ids:
-                return []
-            filter_query["project_id"] = project_id
+            manager_clauses.append({"project_id": project_id})
+        else:
+            manager_clauses.append({"project_id": {"$in": managed_project_ids}})
+
         if assigned_to:
-            filter_query["assigned_to"] = assigned_to
+            manager_clauses.append({"assigned_to": assigned_to})
+
+        manager_clauses.extend(user_filter_clauses)
+        final_query = {"$and": manager_clauses} if len(manager_clauses) > 1 else manager_clauses[0]
 
         return await get_tasks_by_filter(
             task_collection,
-            filter_query,
+            final_query,
             employee_collection=employee_collection,
             user_collection=user_collection,
         )
@@ -166,43 +201,48 @@ async def list_tasks(
             member_project_ids.append(str(p["_id"]))
 
     if member_project_ids:
-        filter_query = {
+        rbac_base = {
             "$or": [
                 {"assigned_to": emp_id},
                 {"project_id": {"$in": member_project_ids}}
             ]
         }
     else:
-        filter_query = {"assigned_to": emp_id}
+        rbac_base = {"assigned_to": emp_id}
 
     if project_id:
         # Check if project is accessible to employee
         if project_id not in member_project_ids:
-            filter_query = {"assigned_to": emp_id, "project_id": project_id}
+            rbac_base = {"assigned_to": emp_id, "project_id": project_id}
         else:
-            filter_query = {"project_id": project_id}
+            rbac_base = {"project_id": project_id}
 
     if assigned_to:
         if assigned_to == emp_id:
-            filter_query = {"assigned_to": emp_id}
             if project_id:
-                filter_query["project_id"] = project_id
+                rbac_base = {"assigned_to": emp_id, "project_id": project_id}
+            else:
+                rbac_base = {"assigned_to": emp_id}
         else:
             # Employee can only view other assignees if within member projects
             if not member_project_ids:
                 return []
-            filter_query = {
-                "assigned_to": assigned_to,
-                "project_id": {"$in": member_project_ids}
-            }
             if project_id:
                 if project_id not in member_project_ids:
                     return []
-                filter_query["project_id"] = project_id
+                rbac_base = {"assigned_to": assigned_to, "project_id": project_id}
+            else:
+                rbac_base = {
+                    "assigned_to": assigned_to,
+                    "project_id": {"$in": member_project_ids}
+                }
+
+    emp_clauses = [rbac_base] + user_filter_clauses
+    final_query = {"$and": emp_clauses} if len(emp_clauses) > 1 else emp_clauses[0]
 
     return await get_tasks_by_filter(
         task_collection,
-        filter_query,
+        final_query,
         employee_collection=employee_collection,
         user_collection=user_collection,
     )
@@ -361,11 +401,7 @@ async def edit_task(
         user_collection=user_collection,
     )
 
-    update_dict = {
-        key: value
-        for key, value in task.model_dump().items()
-        if value is not None
-    }
+    update_dict = task.model_dump(exclude_unset=True)
 
     if update_dict:
         final_team_id = str(current_team["_id"])

@@ -138,6 +138,9 @@ Stores task records, project association, assignee, priority, status lifecycle, 
 - `priority`: Standard Index (`{ "priority": 1 }`)
 - `due_date`: Standard Index (`{ "due_date": 1 }`)
 - `created_by`: Standard Index (`{ "created_by": 1 }`)
+- `status, due_date`: Compound Index (`{ "status": 1, "due_date": 1 }`)
+- `assigned_to, status`: Compound Index (`{ "assigned_to": 1, "status": 1 }`)
+- `project_id, status`: Compound Index (`{ "project_id": 1, "status": 1 }`)
 
 **Relationship & Eligibility Rules:**
 - `Task.project_id -> Project._id` and `Task.assigned_to -> Employee._id`.

@@ -97,20 +97,258 @@ async def update_employee(collection, employee_id: str, employee_data) -> Option
     return await get_employee_by_id(collection, employee_id)
 
 
-async def deactivate_employee(collection, employee_id: str) -> Optional[dict]:
+async def update_employee_profile(
+    employee_collection,
+    user_collection,
+    employee_id: str,
+    payload,
+) -> dict:
     obj_id = validate_object_id(employee_id)
-    employee = await collection.find_one({"_id": obj_id})
+    employee = await employee_collection.find_one({"_id": obj_id})
+    if not employee:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Employee not found"
+        )
+
+    user_id_raw = employee.get("user_id")
+    if not user_id_raw:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    user_obj_id = validate_object_id(user_id_raw)
+
+    raw_updates = payload.model_dump(exclude_unset=True)
+    if not raw_updates:
+        employee["id"] = str(employee["_id"])
+        employee["_id"] = str(employee["_id"])
+        if isinstance(employee.get("joining_date"), datetime):
+            employee["joining_date"] = employee["joining_date"].date()
+        return employee
+
+    emp_updates = {}
+    new_name = None
+
+    if "name" in raw_updates:
+        new_name = raw_updates["name"]
+        emp_updates["name"] = new_name
+
+    if "phone" in raw_updates:
+        val = raw_updates["phone"]
+        emp_updates["phone"] = val if val is not None else ""
+
+    if "department" in raw_updates:
+        val = raw_updates["department"]
+        emp_updates["department"] = val if val is not None else ""
+
+    old_name = employee.get("name")
+
+    if new_name is not None and new_name != old_name:
+        emp_update_res = await employee_collection.update_one(
+            {"_id": obj_id},
+            {"$set": emp_updates}
+        )
+        if emp_update_res.matched_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Employee not found"
+            )
+
+        try:
+            user_update_res = await user_collection.update_one(
+                {"_id": user_obj_id},
+                {"$set": {"name": new_name}}
+            )
+            if user_update_res.matched_count == 0:
+                raise Exception("User not matched during name update")
+        except Exception as e:
+            # Rollback name update in employee collection
+            await employee_collection.update_one(
+                {"_id": obj_id},
+                {"$set": {"name": old_name}}
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to synchronize user profile name: {str(e)}"
+            )
+    else:
+        if emp_updates:
+            await employee_collection.update_one(
+                {"_id": obj_id},
+                {"$set": emp_updates}
+            )
+
+    updated_employee = await get_employee_by_id(employee_collection, employee_id)
+    return updated_employee or employee
+
+
+async def deactivate_employee(
+    employee_collection,
+    user_collection,
+    team_collection,
+    employee_id: str,
+    actor_user_id: str,
+) -> dict:
+    obj_id = validate_object_id(employee_id)
+    employee = await employee_collection.find_one({"_id": obj_id})
 
     if not employee:
-        return None
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Employee not found"
+        )
 
-    await collection.update_one(
+    user_id_raw = employee.get("user_id")
+    if not user_id_raw:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    user_obj_id = validate_object_id(user_id_raw)
+    user = await user_collection.find_one({"_id": user_obj_id})
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    # 1. Guard against self-deactivation
+    if str(actor_user_id) == str(user_id_raw):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrators cannot deactivate their own account."
+        )
+
+    # 2. Guard against deactivating the last active administrator
+    if user.get("role") == "admin" or employee.get("role") == "admin":
+        active_admin_count = await user_collection.count_documents({
+            "role": "admin",
+            "status": {"$ne": "inactive"},
+        })
+        if active_admin_count <= 1 and user.get("status") != "inactive":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot deactivate the last active administrator."
+            )
+
+    # 3. Guard against deactivating a manager currently managing active teams
+    managed_teams_cursor = team_collection.find({
+        "$or": [
+            {"manager_id": str(employee["_id"])},
+            {"manager_id": employee["_id"]},
+        ]
+    })
+    managed_teams = []
+    async for t in managed_teams_cursor:
+        managed_teams.append(t)
+
+    if managed_teams:
+        count = len(managed_teams)
+        name = employee.get("name", "this user")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot deactivate {name}. They are currently managing {count} team(s). Reassign those teams first."
+        )
+
+    old_emp_status = employee.get("status", "active")
+    old_user_status = user.get("status", "active")
+
+    # Two-phase update with rollback
+    emp_res = await employee_collection.update_one(
         {"_id": obj_id},
         {"$set": {"status": "inactive"}}
     )
+    if emp_res.matched_count == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Employee not found"
+        )
+
+    try:
+        await user_collection.update_one(
+            {"_id": user_obj_id},
+            {"$set": {"status": "inactive"}}
+        )
+    except Exception as e:
+        await employee_collection.update_one(
+            {"_id": obj_id},
+            {"$set": {"status": old_emp_status}}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to synchronize user deactivation: {str(e)}"
+        )
 
     employee["id"] = str(employee["_id"])
+    employee["_id"] = str(employee["_id"])
     employee["status"] = "inactive"
+    return employee
+
+
+async def reactivate_employee(
+    employee_collection,
+    user_collection,
+    employee_id: str,
+    actor_user_id: str,
+) -> dict:
+    obj_id = validate_object_id(employee_id)
+    employee = await employee_collection.find_one({"_id": obj_id})
+
+    if not employee:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Employee not found"
+        )
+
+    user_id_raw = employee.get("user_id")
+    if not user_id_raw:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    user_obj_id = validate_object_id(user_id_raw)
+    user = await user_collection.find_one({"_id": user_obj_id})
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    old_emp_status = employee.get("status", "inactive")
+    old_user_status = user.get("status", "inactive")
+
+    # Two-phase update with rollback
+    emp_res = await employee_collection.update_one(
+        {"_id": obj_id},
+        {"$set": {"status": "active"}}
+    )
+    if emp_res.matched_count == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Employee not found"
+        )
+
+    try:
+        await user_collection.update_one(
+            {"_id": user_obj_id},
+            {"$set": {"status": "active"}}
+        )
+    except Exception as e:
+        await employee_collection.update_one(
+            {"_id": obj_id},
+            {"$set": {"status": old_emp_status}}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to synchronize user reactivation: {str(e)}"
+        )
+
+    employee["id"] = str(employee["_id"])
+    employee["_id"] = str(employee["_id"])
+    employee["status"] = "active"
     return employee
 
 

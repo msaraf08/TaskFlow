@@ -13,6 +13,7 @@ from app.database.dependencies import (
 from app.schemas.employee_schema import (
     EmployeeCreateSchema,
     EmployeeUpdateSchema,
+    EmployeeProfileUpdateSchema,
     EmployeeRoleUpdateSchema,
     EmployeeResponseSchema,
     EmployeeCreateResponseSchema,
@@ -22,7 +23,9 @@ from app.services.employee_service import (
     get_all_employees,
     get_employee_by_id,
     update_employee,
+    update_employee_profile,
     deactivate_employee,
+    reactivate_employee,
     update_employee_role,
 )
 from app.services.activity_service import log_activity
@@ -155,36 +158,90 @@ async def edit_employee(
     return updated_employee
 
 
+@router.patch(
+    "/{employee_id}",
+    response_model=EmployeeResponseSchema
+)
+async def update_profile(
+    employee_id: str,
+    payload: EmployeeProfileUpdateSchema,
+    employee_collection=Depends(get_employee_collection),
+    user_collection=Depends(get_user_collection),
+    current_user=Depends(require_roles("admin")),
+):
+    return await update_employee_profile(
+        employee_collection=employee_collection,
+        user_collection=user_collection,
+        employee_id=employee_id,
+        payload=payload,
+    )
+
+
 @router.patch("/{employee_id}/deactivate")
 async def deactivate(
     employee_id: str,
     employee_collection=Depends(get_employee_collection),
     user_collection=Depends(get_user_collection),
-    current_user=Depends(require_roles("admin"))
+    team_collection=Depends(get_team_collection),
+    activity_collection=Depends(get_activity_collection),
+    current_user=Depends(require_roles("admin")),
 ):
     deactivated = await deactivate_employee(
-        employee_collection,
-        employee_id
+        employee_collection=employee_collection,
+        user_collection=user_collection,
+        team_collection=team_collection,
+        employee_id=employee_id,
+        actor_user_id=current_user["user_id"],
     )
 
-    if not deactivated:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Employee not found"
-        )
-
-    # Deactivate corresponding user account so token/login is revoked
-    if deactivated.get("user_id"):
-        try:
-            await user_collection.update_one(
-                {"_id": ObjectId(deactivated["user_id"])},
-                {"$set": {"status": "inactive"}}
-            )
-        except Exception:
-            pass
+    await log_activity(
+        activity_collection=activity_collection,
+        actor_user_id=current_user["user_id"],
+        action="user_deactivated",
+        entity_type="employee",
+        entity_id=employee_id,
+        metadata={
+            "name": deactivated.get("name"),
+            "status": "inactive",
+        },
+    )
 
     return {
-        "message": "Employee deactivated successfully"
+        "message": "Employee deactivated successfully",
+        "employee": deactivated,
+    }
+
+
+@router.patch("/{employee_id}/reactivate")
+async def reactivate(
+    employee_id: str,
+    employee_collection=Depends(get_employee_collection),
+    user_collection=Depends(get_user_collection),
+    activity_collection=Depends(get_activity_collection),
+    current_user=Depends(require_roles("admin")),
+):
+    reactivated = await reactivate_employee(
+        employee_collection=employee_collection,
+        user_collection=user_collection,
+        employee_id=employee_id,
+        actor_user_id=current_user["user_id"],
+    )
+
+    await log_activity(
+        activity_collection=activity_collection,
+        actor_user_id=current_user["user_id"],
+        action="user_reactivated",
+        entity_type="employee",
+        entity_id=employee_id,
+        metadata={
+            "name": reactivated.get("name"),
+            "status": "active",
+        },
+    )
+
+    return {
+        "message": "Employee reactivated successfully",
+        "employee": reactivated,
     }
 
 

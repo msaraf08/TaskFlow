@@ -1,6 +1,6 @@
 from datetime import date
 from typing import Literal, Optional
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class EmployeeCreateSchema(BaseModel):
@@ -19,6 +19,31 @@ class EmployeeUpdateSchema(BaseModel):
     department: Optional[str] = Field(None, min_length=1)
     role: Optional[str] = None
     joining_date: Optional[date] = None
+
+
+class EmployeeProfileUpdateSchema(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    phone: Optional[str] = Field(None, max_length=20)
+    department: Optional[str] = Field(None, max_length=100)
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            stripped = v.strip()
+            if not stripped:
+                raise ValueError("Name cannot be empty or only whitespace")
+            return stripped
+        return v
+
+    @field_validator("phone", "department")
+    @classmethod
+    def strip_optional(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            return v.strip()
+        return v
 
 
 class EmployeeRoleUpdateSchema(BaseModel):

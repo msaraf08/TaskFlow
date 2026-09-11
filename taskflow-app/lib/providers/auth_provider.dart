@@ -123,15 +123,29 @@ class AuthProvider extends ChangeNotifier {
     required String name,
     required String email,
     required String password,
+    String? phone,
+    String? department,
   }) async {
     _status = AuthStatus.authenticating;
     _errorMessage = null;
     notifyListeners();
 
     try {
+      final body = <String, dynamic>{
+        'name': name,
+        'email': email,
+        'password': password,
+      };
+      if (phone != null && phone.trim().isNotEmpty) {
+        body['phone'] = phone.trim();
+      }
+      if (department != null && department.trim().isNotEmpty) {
+        body['department'] = department.trim();
+      }
+
       await _client.post(
         '/auth/register',
-        body: {'name': name, 'email': email, 'password': password},
+        body: body,
         requiresAuth: false,
       );
 

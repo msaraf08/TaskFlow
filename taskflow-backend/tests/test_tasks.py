@@ -262,20 +262,20 @@ async def test_task_crud_lifecycle_and_defaults(
     admin_headers = {"Authorization": f"Bearer {data['admin_token']}"}
     due = (date.today() + timedelta(days=5)).isoformat()
 
-    # 1. Create task with default priority & status (medium / todo)
-    create_payload = {
+    # 1. Create task without due_date (due_date is optional)
+    create_payload_no_due = {
         "title": "  Setup Database Indexes  ",
         "description": "Add index on team_id and status",
         "project_id": data["p1_id"],
         "assigned_to": data["e1_emp_id"],
-        "due_date": due
     }
-    res = await client.post("/tasks/", json=create_payload, headers=admin_headers)
+    res = await client.post("/tasks/", json=create_payload_no_due, headers=admin_headers)
     assert res.status_code == 201, res.text
     task1 = res.json()
     assert task1["title"] == "Setup Database Indexes"  # Trimmed
     assert task1["priority"] == "medium"  # Default
     assert task1["status"] == "todo"  # Default
+    assert task1["due_date"] is None  # Optional due date omitted
     assert task1["project_id"] == data["p1_id"]
     assert task1["assigned_to"] == data["e1_emp_id"]
     assert task1["created_by"] == data["admin_user_id"]
@@ -283,7 +283,7 @@ async def test_task_crud_lifecycle_and_defaults(
     assert "updated_at" in task1
     t1_id = task1["id"]
 
-    # 2. Create task with explicit priority & status
+    # 2. Create task with explicit priority, status, and due_date
     res2 = await client.post("/tasks/", json={
         "title": "Deploy to Staging",
         "project_id": data["p1_id"],
@@ -297,23 +297,34 @@ async def test_task_crud_lifecycle_and_defaults(
     assert task2["priority"] == "urgent"
     assert task2["status"] == "in_progress"
     assert task2["assigned_to"] == data["m1_emp_id"]
+    assert task2["due_date"] == due
 
     # 3. Retrieve task by ID
     res_get = await client.get(f"/tasks/{t1_id}", headers=admin_headers)
     assert res_get.status_code == 200
     assert res_get.json()["id"] == t1_id
+    assert res_get.json()["due_date"] is None
 
-    # 4. Partial update (title, status)
+    # 4. Partial update (title, status, set due_date)
     res_put = await client.put(f"/tasks/{t1_id}", json={
         "title": "Setup All Database Indexes",
-        "status": "completed"
+        "status": "completed",
+        "due_date": due
     }, headers=admin_headers)
     assert res_put.status_code == 200
     updated = res_put.json()
     assert updated["title"] == "Setup All Database Indexes"
     assert updated["status"] == "completed"
     assert updated["description"] == "Add index on team_id and status"  # Retained
+    assert updated["due_date"] == due
     assert updated["updated_at"] >= task1["updated_at"]
+
+    # 4b. Clear due_date by passing null
+    res_clear_due = await client.put(f"/tasks/{t1_id}", json={
+        "due_date": None
+    }, headers=admin_headers)
+    assert res_clear_due.status_code == 200
+    assert res_clear_due.json()["due_date"] is None
 
     # 5. Delete task
     res_del = await client.delete(f"/tasks/{t1_id}", headers=admin_headers)

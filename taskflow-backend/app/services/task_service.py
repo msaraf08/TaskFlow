@@ -1,4 +1,5 @@
 from datetime import datetime, time, timezone
+import re
 from typing import Any, Dict, List, Optional, Tuple
 from fastapi import HTTPException, status
 
@@ -145,6 +146,8 @@ async def create_task(
 
     if doc.get("due_date"):
         doc["due_date"] = datetime.combine(doc["due_date"], time.min)
+    else:
+        doc["due_date"] = None
 
     doc["created_by"] = user_id
     doc["created_at"] = now
@@ -158,18 +161,88 @@ async def create_task(
     return doc
 
 
+def build_task_filter_query(
+    project_id: Optional[str] = None,
+    assigned_to: Optional[str] = None,
+    status: Optional[str] = None,
+    priority: Optional[str] = None,
+    search: Optional[str] = None,
+    due_date: Optional[str] = None,
+    overdue: Optional[bool] = None,
+) -> Dict[str, Any]:
+    clauses: List[Dict[str, Any]] = []
+
+    if project_id:
+        clauses.append({"project_id": project_id})
+    if assigned_to:
+        clauses.append({"assigned_to": assigned_to})
+    if status:
+        clauses.append({"status": status})
+    if priority:
+        clauses.append({"priority": priority})
+    if search and search.strip():
+        # Escape special regex characters to prevent regex injection or unhandled errors
+        escaped_search = re.escape(search.strip())
+        clauses.append({
+            "$or": [
+                {"title": {"$regex": escaped_search, "$options": "i"}},
+                {"description": {"$regex": escaped_search, "$options": "i"}},
+            ]
+        })
+    if due_date and due_date.strip():
+        try:
+            target_date = datetime.strptime(due_date.strip(), "%Y-%m-%d").date()
+            start = datetime.combine(target_date, time.min)
+            end = datetime.combine(target_date, time.max)
+            clauses.append({"due_date": {"$gte": start, "$lte": end}})
+        except ValueError:
+            pass
+    if overdue is True:
+        now_utc = datetime.now(timezone.utc)
+        today_start = datetime.combine(now_utc.date(), time.min)
+        clauses.append({
+            "due_date": {"$lt": today_start, "$ne": None},
+            "status": {"$nin": ["completed", "cancelled"]},
+        })
+    elif overdue is False:
+        now_utc = datetime.now(timezone.utc)
+        today_start = datetime.combine(now_utc.date(), time.min)
+        clauses.append({
+            "$or": [
+                {"due_date": {"$gte": today_start}},
+                {"due_date": None},
+                {"status": {"$in": ["completed", "cancelled"]}},
+            ]
+        })
+
+    if not clauses:
+        return {}
+    if len(clauses) == 1:
+        return clauses[0]
+    return {"$and": clauses}
+
+
 async def get_all_tasks(
     task_collection,
     project_id: Optional[str] = None,
     assigned_to: Optional[str] = None,
+    status: Optional[str] = None,
+    priority: Optional[str] = None,
+    search: Optional[str] = None,
+    due_date: Optional[str] = None,
+    overdue: Optional[bool] = None,
     employee_collection=None,
     user_collection=None,
 ) -> List[dict]:
-    query: Dict[str, Any] = {}
-    if project_id:
-        query["project_id"] = project_id
-    if assigned_to:
-        query["assigned_to"] = assigned_to
+    query = build_task_filter_query(
+        project_id=project_id,
+        assigned_to=assigned_to,
+        status=status,
+        priority=priority,
+        search=search,
+        due_date=due_date,
+        overdue=overdue,
+    )
 
     tasks = []
     cursor = task_collection.find(query).sort("created_at", -1)
@@ -240,11 +313,7 @@ async def update_task(
     user_collection=None,
 ) -> dict:
     obj_id = validate_object_id(task_id)
-    update_dict = {
-        key: value
-        for key, value in task_data.model_dump().items()
-        if value is not None
-    }
+    update_dict = task_data.model_dump(exclude_unset=True)
 
     if not update_dict:
         if employee_collection is not None:
@@ -285,8 +354,11 @@ async def update_task(
                 detail="Current assigned employee is not eligible for the new project's team"
             )
 
-    if update_dict.get("due_date"):
-        update_dict["due_date"] = datetime.combine(update_dict["due_date"], time.min)
+    if "due_date" in update_dict:
+        if update_dict["due_date"] is not None:
+            update_dict["due_date"] = datetime.combine(update_dict["due_date"], time.min)
+        else:
+            update_dict["due_date"] = None
 
     update_dict["updated_at"] = datetime.now(timezone.utc)
 

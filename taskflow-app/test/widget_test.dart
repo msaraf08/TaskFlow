@@ -218,6 +218,8 @@ void main() {
         expect(find.text('Full Name'), findsOneWidget);
         expect(find.text('Email Address'), findsOneWidget);
         expect(find.text('Password'), findsOneWidget);
+        expect(find.text('Phone Number (Optional)'), findsOneWidget);
+        expect(find.text('Department (Optional)'), findsOneWidget);
         // Ensure no Role selector is rendered
         expect(find.text('Role'), findsNothing);
         expect(find.text('Employee'), findsNothing);
@@ -225,12 +227,130 @@ void main() {
         expect(find.text('Admin'), findsNothing);
 
         // Tap Create Account button without filling form
+        await tester.ensureVisible(find.widgetWithText(FilledButton, 'Create Account'));
+        await tester.pumpAndSettle();
         await tester.tap(find.widgetWithText(FilledButton, 'Create Account'));
         await tester.pumpAndSettle();
 
         expect(find.text('Name is required'), findsOneWidget);
         expect(find.text('Email is required'), findsOneWidget);
         expect(find.text('Password is required'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'RegisterScreen submits required-only registration without phone/department/role',
+      (tester) async {
+        Map<String, dynamic>? capturedBody;
+        final mockHttpClient = MockClient((request) async {
+          if (request.method == 'POST' && request.url.path == '/auth/register') {
+            capturedBody = jsonDecode(request.body) as Map<String, dynamic>;
+            return http.Response(
+              jsonEncode({
+                'message': 'User registered successfully',
+                'user': {
+                  'id': 'u1',
+                  'name': capturedBody!['name'],
+                  'email': capturedBody!['email'],
+                  'role': 'employee',
+                  'status': 'active',
+                },
+              }),
+              201,
+            );
+          }
+          return http.Response(jsonEncode([]), 200);
+        });
+
+        final fakeStorage = SecureStorageService();
+        final fakeClient = ApiClient(client: mockHttpClient, storage: fakeStorage);
+        final authProv = AuthProvider(client: fakeClient, storage: fakeStorage);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: ChangeNotifierProvider<AuthProvider>.value(
+              value: authProv,
+              child: const RegisterScreen(),
+            ),
+          ),
+        );
+
+        await tester.enterText(find.byType(TextFormField).at(0), 'Alice Smith');
+        await tester.enterText(find.byType(TextFormField).at(1), 'alice@test.com');
+        await tester.enterText(find.byType(TextFormField).at(2), 'Password123');
+
+        await tester.ensureVisible(find.widgetWithText(FilledButton, 'Create Account'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(FilledButton, 'Create Account'));
+        await tester.pumpAndSettle();
+
+        expect(capturedBody, isNotNull);
+        expect(capturedBody!['name'], 'Alice Smith');
+        expect(capturedBody!['email'], 'alice@test.com');
+        expect(capturedBody!['password'], 'Password123');
+        expect(capturedBody!.containsKey('phone'), isFalse);
+        expect(capturedBody!.containsKey('department'), isFalse);
+        expect(capturedBody!.containsKey('role'), isFalse);
+        expect(capturedBody!.containsKey('status'), isFalse);
+      },
+    );
+
+    testWidgets(
+      'RegisterScreen submits optional phone and department when filled',
+      (tester) async {
+        Map<String, dynamic>? capturedBody;
+        final mockHttpClient = MockClient((request) async {
+          if (request.method == 'POST' && request.url.path == '/auth/register') {
+            capturedBody = jsonDecode(request.body) as Map<String, dynamic>;
+            return http.Response(
+              jsonEncode({
+                'message': 'User registered successfully',
+                'user': {
+                  'id': 'u2',
+                  'name': capturedBody!['name'],
+                  'email': capturedBody!['email'],
+                  'role': 'employee',
+                  'status': 'active',
+                },
+              }),
+              201,
+            );
+          }
+          return http.Response(jsonEncode([]), 200);
+        });
+
+        final fakeStorage = SecureStorageService();
+        final fakeClient = ApiClient(client: mockHttpClient, storage: fakeStorage);
+        final authProv = AuthProvider(client: fakeClient, storage: fakeStorage);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: ChangeNotifierProvider<AuthProvider>.value(
+              value: authProv,
+              child: const RegisterScreen(),
+            ),
+          ),
+        );
+
+        await tester.enterText(find.byType(TextFormField).at(0), 'Bob Jones');
+        await tester.enterText(find.byType(TextFormField).at(1), 'bob@test.com');
+        await tester.enterText(find.byType(TextFormField).at(2), 'Password123');
+        await tester.enterText(find.byType(TextFormField).at(3), '+1 555-0199');
+        await tester.enterText(find.byType(TextFormField).at(4), 'Engineering');
+
+        await tester.ensureVisible(find.widgetWithText(FilledButton, 'Create Account'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(FilledButton, 'Create Account'));
+        await tester.pumpAndSettle();
+
+        expect(capturedBody, isNotNull);
+        expect(capturedBody!['name'], 'Bob Jones');
+        expect(capturedBody!['email'], 'bob@test.com');
+        expect(capturedBody!['password'], 'Password123');
+        expect(capturedBody!['phone'], '+1 555-0199');
+        expect(capturedBody!['department'], 'Engineering');
+        expect(capturedBody!.containsKey('role'), isFalse);
+        expect(capturedBody!.containsKey('status'), isFalse);
       },
     );
 
@@ -2064,6 +2184,599 @@ void main() {
           findsOneWidget,
         );
         expect(find.text('task_auth_999'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'UserManagementScreen supports deactivation, reactivation, and status filtering',
+      (tester) async {
+        final List<Map<String, dynamic>> requestsMade = [];
+        final mockHttpClient = MockClient((request) async {
+          requestsMade.add({
+            'method': request.method,
+            'path': request.url.path,
+          });
+
+          if (request.method == 'GET' && request.url.path == '/employees') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'emp_admin_1',
+                  'name': 'Raj Admin',
+                  'email': 'raj@test.com',
+                  'phone': '1234567890',
+                  'department': 'Exec',
+                  'role': 'admin',
+                  'status': 'active',
+                  'user_id': 'user_raj_1',
+                },
+                {
+                  'id': 'emp_2',
+                  'name': 'Sarah Miller',
+                  'email': 'sarah@test.com',
+                  'phone': '5550201',
+                  'department': 'Engineering',
+                  'role': 'employee',
+                  'status': 'active',
+                  'user_id': 'user_sarah_2',
+                },
+              ]),
+              200,
+            );
+          }
+
+          if (request.method == 'PATCH' &&
+              request.url.path == '/employees/emp_2/deactivate') {
+            return http.Response(
+              jsonEncode({
+                'message': 'Employee deactivated successfully',
+                'employee': {
+                  'id': 'emp_2',
+                  'name': 'Sarah Miller',
+                  'email': 'sarah@test.com',
+                  'phone': '5550201',
+                  'department': 'Engineering',
+                  'role': 'employee',
+                  'status': 'inactive',
+                  'user_id': 'user_sarah_2',
+                },
+              }),
+              200,
+            );
+          }
+
+          return http.Response(jsonEncode([]), 200);
+        });
+
+        final fakeStorage = SecureStorageService();
+        final fakeClient = ApiClient(client: mockHttpClient, storage: fakeStorage);
+        final authProv = AuthProvider(apiClient: fakeClient, storage: fakeStorage);
+        final teamProv = TeamProvider(apiClient: fakeClient);
+
+        authProv.setUserForTesting(
+          const User(
+            id: 'user_raj_1',
+            name: 'Raj Admin',
+            email: 'raj@test.com',
+            role: UserRole.admin,
+          ),
+        );
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: authProv),
+              ChangeNotifierProvider.value(value: teamProv),
+            ],
+            child: const MaterialApp(home: UserManagementScreen()),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Verify Deactivate button exists for Sarah Miller
+        expect(find.text('Deactivate'), findsOneWidget);
+
+        // Tap Deactivate
+        await tester.tap(find.text('Deactivate'));
+        await tester.pumpAndSettle();
+
+        // Confirmation dialog is shown
+        expect(find.text('Deactivate User'), findsOneWidget);
+        expect(find.textContaining('They will not be able to log in'), findsOneWidget);
+
+        // Confirm deactivation
+        final deactivateConfirmButton = find.widgetWithText(FilledButton, 'Deactivate');
+        await tester.tap(deactivateConfirmButton);
+        await tester.pumpAndSettle();
+
+        // Verify request was sent
+        expect(
+          requestsMade.any((r) => r['method'] == 'PATCH' && r['path'] == '/employees/emp_2/deactivate'),
+          isTrue,
+        );
+        expect(find.text('Sarah Miller has been deactivated'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'TaskListScreen supports search input, filter chips, and clear filters',
+      (tester) async {
+        final List<Map<String, dynamic>> requestsMade = [];
+        final mockHttpClient = MockClient((request) async {
+          requestsMade.add({
+            'method': request.method,
+            'path': request.url.path,
+            'query': request.url.queryParameters,
+          });
+
+          if (request.url.path == '/projects') {
+            return http.Response(jsonEncode([]), 200);
+          }
+          if (request.url.path == '/tasks') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'task_1',
+                  'title': 'Test Authentication Task',
+                  'description': 'Description',
+                  'project_id': 'proj_1',
+                  'assigned_to': 'emp_1',
+                  'priority': 'high',
+                  'status': 'todo',
+                  'due_date': '2026-04-01',
+                  'created_at': '2026-01-01T00:00:00.000Z',
+                },
+              ]),
+              200,
+            );
+          }
+          return http.Response(jsonEncode([]), 200);
+        });
+
+        final fakeStorage = SecureStorageService();
+        final fakeClient = ApiClient(client: mockHttpClient, storage: fakeStorage);
+        final authProv = AuthProvider(apiClient: fakeClient, storage: fakeStorage);
+        final taskProv = TaskProvider(apiClient: fakeClient);
+        final projProv = ProjectProvider(apiClient: fakeClient);
+
+        authProv.setUserForTesting(
+          const User(
+            id: 'user_1',
+            name: 'Test Admin',
+            email: 'admin@test.com',
+            role: UserRole.admin,
+          ),
+        );
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: authProv),
+              ChangeNotifierProvider.value(value: taskProv),
+              ChangeNotifierProvider.value(value: projProv),
+            ],
+            child: const MaterialApp(home: TaskListScreen()),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // 1. Verify task is rendered
+        expect(find.text('Test Authentication Task'), findsOneWidget);
+
+        // 2. Enter search term
+        await tester.enterText(find.byType(TextField), 'Authentication');
+        await tester.pumpAndSettle(const Duration(milliseconds: 500));
+
+        // 3. Toggle Overdue FilterChip
+        await tester.tap(find.text('Overdue Only'));
+        await tester.pumpAndSettle();
+
+        // 4. Verify Clear Filters button appears and resets filters
+        expect(find.text('Clear Filters'), findsOneWidget);
+        await tester.ensureVisible(find.text('Clear Filters'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Clear Filters'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Clear Filters'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'TaskFormScreen creates task without due date',
+      (tester) async {
+        Map<String, dynamic>? capturedCreateBody;
+
+        final mockHttpClient = MockClient((request) async {
+          if (request.url.path == '/employees') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'emp_1',
+                  'user_id': 'user_1',
+                  'name': 'Neha',
+                  'email': 'neha@flow.com',
+                  'role': 'employee',
+                  'department': 'Engineering',
+                  'status': 'active',
+                },
+              ]),
+              200,
+            );
+          }
+          if (request.url.path == '/projects') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'proj_1',
+                  'name': 'TaskFlow Mobile',
+                  'description': 'Mobile App',
+                  'team_id': 'team_1',
+                  'status': 'active',
+                },
+              ]),
+              200,
+            );
+          }
+          if (request.method == 'POST' && request.url.path == '/tasks') {
+            capturedCreateBody = jsonDecode(request.body) as Map<String, dynamic>;
+            return http.Response(
+              jsonEncode({
+                'id': 'new_task_1',
+                'title': capturedCreateBody!['title'],
+                'description': capturedCreateBody!['description'],
+                'project_id': capturedCreateBody!['project_id'],
+                'assigned_to': capturedCreateBody!['assigned_to'],
+                'priority': capturedCreateBody!['priority'],
+                'status': capturedCreateBody!['status'],
+                'due_date': capturedCreateBody!['due_date'],
+                'created_by': 'user_admin',
+                'created_at': '2026-01-01T00:00:00.000Z',
+                'updated_at': '2026-01-01T00:00:00.000Z',
+              }),
+              201,
+            );
+          }
+          return http.Response(jsonEncode([]), 200);
+        });
+
+        final fakeStorage = SecureStorageService();
+        final fakeClient = ApiClient(client: mockHttpClient, storage: fakeStorage);
+        final authProv = AuthProvider(apiClient: fakeClient, storage: fakeStorage);
+        final taskProv = TaskProvider(apiClient: fakeClient);
+        final projProv = ProjectProvider(apiClient: fakeClient);
+        final teamProv = TeamProvider(apiClient: fakeClient);
+
+        authProv.setUserForTesting(
+          const User(
+            id: 'user_admin',
+            name: 'Admin User',
+            email: 'admin@test.com',
+            role: UserRole.admin,
+          ),
+        );
+
+        await projProv.fetchProjects();
+        await teamProv.fetchEmployees();
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: authProv),
+              ChangeNotifierProvider.value(value: taskProv),
+              ChangeNotifierProvider.value(value: projProv),
+              ChangeNotifierProvider.value(value: teamProv),
+            ],
+            child: const MaterialApp(home: TaskFormScreen()),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Set Due Date (Optional)'), findsOneWidget);
+        await tester.enterText(find.byType(TextFormField).first, 'No Due Date Task');
+        await tester.enterText(find.byType(TextFormField).at(1), 'Task description');
+        await tester.ensureVisible(find.text('Create Task'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Create Task'));
+        await tester.pumpAndSettle();
+
+        expect(capturedCreateBody, isNotNull);
+        expect(capturedCreateBody!['title'], 'No Due Date Task');
+        expect(capturedCreateBody!.containsKey('due_date'), isFalse);
+      },
+    );
+
+    testWidgets(
+      'TaskFormScreen allows clearing existing due date on edit',
+      (tester) async {
+        Map<String, dynamic>? capturedUpdateBody;
+
+        final mockHttpClient = MockClient((request) async {
+          if (request.url.path == '/employees') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'emp_1',
+                  'user_id': 'user_1',
+                  'name': 'Neha',
+                  'email': 'neha@flow.com',
+                  'role': 'employee',
+                  'department': 'Engineering',
+                  'status': 'active',
+                },
+              ]),
+              200,
+            );
+          }
+          if (request.url.path == '/projects') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'proj_1',
+                  'name': 'TaskFlow Mobile',
+                  'description': 'Mobile App',
+                  'team_id': 'team_1',
+                  'status': 'active',
+                },
+              ]),
+              200,
+            );
+          }
+          if (request.method == 'PUT' && request.url.path.startsWith('/tasks/')) {
+            capturedUpdateBody = jsonDecode(request.body) as Map<String, dynamic>;
+            return http.Response(
+              jsonEncode({
+                'id': 'task_existing',
+                'title': 'Existing Task',
+                'description': 'Existing Description',
+                'project_id': 'proj_1',
+                'assigned_to': 'emp_1',
+                'priority': 'medium',
+                'status': 'todo',
+                'due_date': capturedUpdateBody!['due_date'],
+                'created_by': 'user_admin',
+                'created_at': '2026-01-01T00:00:00.000Z',
+                'updated_at': '2026-01-01T00:00:00.000Z',
+              }),
+              200,
+            );
+          }
+          return http.Response(jsonEncode([]), 200);
+        });
+
+        final fakeStorage = SecureStorageService();
+        final fakeClient = ApiClient(client: mockHttpClient, storage: fakeStorage);
+        final authProv = AuthProvider(apiClient: fakeClient, storage: fakeStorage);
+        final taskProv = TaskProvider(apiClient: fakeClient);
+        final projProv = ProjectProvider(apiClient: fakeClient);
+        final teamProv = TeamProvider(apiClient: fakeClient);
+
+        authProv.setUserForTesting(
+          const User(
+            id: 'user_admin',
+            name: 'Admin User',
+            email: 'admin@test.com',
+            role: UserRole.admin,
+          ),
+        );
+
+        await projProv.fetchProjects();
+        await teamProv.fetchEmployees();
+
+        const existingTask = Task(
+          id: 'task_existing',
+          title: 'Existing Task',
+          description: 'Description',
+          projectId: 'proj_1',
+          assignedTo: 'emp_1',
+          priority: TaskPriority.medium,
+          status: TaskStatus.todo,
+          dueDate: '2026-05-01',
+        );
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: authProv),
+              ChangeNotifierProvider.value(value: taskProv),
+              ChangeNotifierProvider.value(value: projProv),
+              ChangeNotifierProvider.value(value: teamProv),
+            ],
+            child: const MaterialApp(home: TaskFormScreen(task: existingTask)),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Due Date: 2026-05-01'), findsOneWidget);
+        expect(find.byTooltip('Clear Due Date'), findsOneWidget);
+
+        // Clear due date
+        await tester.tap(find.byTooltip('Clear Due Date'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Set Due Date (Optional)'), findsOneWidget);
+        await tester.ensureVisible(find.text('Save Changes'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Save Changes'));
+        await tester.pumpAndSettle();
+
+        expect(capturedUpdateBody, isNotNull);
+        expect(capturedUpdateBody!['due_date'], isNull);
+      },
+    );
+
+    testWidgets(
+      'UserManagementScreen View Profile dialog displays all employee details and read-only fields',
+      (tester) async {
+        final mockHttpClient = MockClient((request) async {
+          if (request.method == 'GET' && request.url.path == '/employees') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'emp_swayam_1',
+                  'user_id': 'user_swayam_1',
+                  'name': 'Swayam',
+                  'email': 'swayam@taskflow.com',
+                  'phone': '',
+                  'department': 'General',
+                  'role': 'employee',
+                  'joining_date': '2026-09-11',
+                  'status': 'active',
+                },
+              ]),
+              200,
+            );
+          }
+          return http.Response(jsonEncode([]), 200);
+        });
+
+        final fakeStorage = SecureStorageService();
+        final fakeClient = ApiClient(client: mockHttpClient, storage: fakeStorage);
+        final authProv = AuthProvider(apiClient: fakeClient, storage: fakeStorage);
+        final teamProv = TeamProvider(apiClient: fakeClient);
+
+        authProv.setUserForTesting(
+          const User(
+            id: 'user_admin',
+            name: 'Admin User',
+            email: 'admin@test.com',
+            role: UserRole.admin,
+          ),
+        );
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: authProv),
+              ChangeNotifierProvider.value(value: teamProv),
+            ],
+            child: const MaterialApp(home: UserManagementScreen()),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Tap "View Profile"
+        expect(find.text('View Profile'), findsOneWidget);
+        await tester.tap(find.text('View Profile'));
+        await tester.pumpAndSettle();
+
+        // Verify Dialog Title & Contents
+        expect(find.text('Employee Profile'), findsOneWidget);
+        expect(find.text('swayam@taskflow.com'), findsWidgets);
+        expect(find.text('Email cannot be modified'), findsOneWidget);
+        expect(find.text('Use "Change Role" action to modify role'), findsOneWidget);
+        expect(find.text('2026-09-11'), findsOneWidget);
+        expect(find.text('Active'), findsWidgets);
+        expect(find.text('Save Changes'), findsOneWidget);
+        expect(find.text('Cancel'), findsOneWidget);
+
+        // Close dialog
+        await tester.tap(find.text('Cancel'));
+        await tester.pumpAndSettle();
+        expect(find.text('Employee Profile'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'UserManagementScreen View Profile allows editing name, phone, department, and sends PATCH /employees/{id}',
+      (tester) async {
+        final List<Map<String, dynamic>> requestsMade = [];
+        final mockHttpClient = MockClient((request) async {
+          if (request.method == 'GET' && request.url.path == '/employees') {
+            return http.Response(
+              jsonEncode([
+                {
+                  'id': 'emp_swayam_1',
+                  'user_id': 'user_swayam_1',
+                  'name': 'Swayam',
+                  'email': 'swayam@taskflow.com',
+                  'phone': '',
+                  'department': 'General',
+                  'role': 'employee',
+                  'joining_date': '2026-09-11',
+                  'status': 'active',
+                },
+              ]),
+              200,
+            );
+          }
+
+          if (request.method == 'PATCH' &&
+              request.url.path == '/employees/emp_swayam_1') {
+            final body = jsonDecode(request.body);
+            requestsMade.add({
+              'method': request.method,
+              'path': request.url.path,
+              'body': body,
+            });
+            return http.Response(
+              jsonEncode({
+                'id': 'emp_swayam_1',
+                'user_id': 'user_swayam_1',
+                'name': body['name'] ?? 'Swayam',
+                'email': 'swayam@taskflow.com',
+                'phone': body['phone'] ?? '',
+                'department': body['department'] ?? 'General',
+                'role': 'employee',
+                'joining_date': '2026-09-11',
+                'status': 'active',
+              }),
+              200,
+            );
+          }
+
+          return http.Response(jsonEncode([]), 200);
+        });
+
+        final fakeStorage = SecureStorageService();
+        final fakeClient = ApiClient(client: mockHttpClient, storage: fakeStorage);
+        final authProv = AuthProvider(apiClient: fakeClient, storage: fakeStorage);
+        final teamProv = TeamProvider(apiClient: fakeClient);
+
+        authProv.setUserForTesting(
+          const User(
+            id: 'user_admin',
+            name: 'Admin User',
+            email: 'admin@test.com',
+            role: UserRole.admin,
+          ),
+        );
+
+        await tester.pumpWidget(
+          MultiProvider(
+            providers: [
+              ChangeNotifierProvider.value(value: authProv),
+              ChangeNotifierProvider.value(value: teamProv),
+            ],
+            child: const MaterialApp(home: UserManagementScreen()),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Tap "View Profile"
+        await tester.tap(find.text('View Profile'));
+        await tester.pumpAndSettle();
+
+        // Enter phone number and department
+        final phoneField = find.widgetWithText(TextFormField, 'Phone Number (Optional)');
+        await tester.enterText(phoneField, '+1-555-0199');
+
+        final deptField = find.widgetWithText(TextFormField, 'Department (Optional)');
+        await tester.enterText(deptField, 'Development');
+
+        // Tap Save Changes
+        await tester.tap(find.text('Save Changes'));
+        await tester.pumpAndSettle();
+
+        // Verify request was sent
+        expect(requestsMade.length, 1);
+        expect(requestsMade[0]['path'], '/employees/emp_swayam_1');
+        expect(requestsMade[0]['body']['name'], 'Swayam');
+        expect(requestsMade[0]['body']['phone'], '+1-555-0199');
+        expect(requestsMade[0]['body']['department'], 'Development');
+
+        // Verify success snackbar
+        expect(find.text('Profile updated for Swayam'), findsOneWidget);
       },
     );
   });

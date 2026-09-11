@@ -7,7 +7,7 @@ from app.core.jwt import create_access_token
 
 
 @pytest.mark.asyncio
-async def test_public_registration_bootstrap_and_role_security(client, mock_employees_collection):
+async def test_public_registration_bootstrap_and_role_security(client, mock_employees_collection, mock_redis):
     # 1. First user registers -> bootstrapped as admin
     resp1 = await client.post(
         "/auth/register",
@@ -29,8 +29,12 @@ async def test_public_registration_bootstrap_and_role_security(client, mock_empl
     admin_emp = await mock_employees_collection.find_one({"email": "admin@example.com"})
     assert admin_emp is not None
     assert admin_emp["role"] == "admin"
+    assert admin_emp["department"] == "Executive"
+    assert admin_emp["phone"] == ""
+    assert admin_emp["status"] == "active"
+    assert admin_emp["joining_date"] is not None
 
-    # 2. Second user registers -> forced to employee role
+    # 2. Second user registers with only required fields -> forced to employee role, default General dept
     resp2 = await client.post(
         "/auth/register",
         json={
@@ -48,8 +52,88 @@ async def test_public_registration_bootstrap_and_role_security(client, mock_empl
     assert emp_doc is not None
     assert emp_doc["name"] == "Regular Employee"
     assert emp_doc["role"] == "employee"
+    assert emp_doc["department"] == "General"
+    assert emp_doc["phone"] == ""
+    assert emp_doc["status"] == "active"
+    assert emp_doc["joining_date"] is not None
 
-    # 3. Duplicate email registration fails
+    # 3. Third user registers with optional phone only
+    resp_phone = await client.post(
+        "/auth/register",
+        json={
+            "name": "Phone User",
+            "email": "phone@example.com",
+            "password": "Password123",
+            "phone": " +1234567890 "
+        }
+    )
+    assert resp_phone.status_code == 201
+    phone_emp = await mock_employees_collection.find_one({"email": "phone@example.com"})
+    assert phone_emp is not None
+    assert phone_emp["phone"] == "+1234567890"  # Trimmed
+    assert phone_emp["department"] == "General"
+
+    # 4. Fourth user registers with optional department only
+    resp_dept = await client.post(
+        "/auth/register",
+        json={
+            "name": "Dept User",
+            "email": "dept@example.com",
+            "password": "Password123",
+            "department": " Engineering "
+        }
+    )
+    assert resp_dept.status_code == 201
+    dept_emp = await mock_employees_collection.find_one({"email": "dept@example.com"})
+    assert dept_emp is not None
+    assert dept_emp["department"] == "Engineering"  # Trimmed
+    assert dept_emp["phone"] == ""
+
+    # 5. Fifth user registers with both phone and department
+    resp_both = await client.post(
+        "/auth/register",
+        json={
+            "name": "Full Profile User",
+            "email": "full@example.com",
+            "password": "Password123",
+            "phone": "9876543210",
+            "department": "Marketing"
+        }
+    )
+    assert resp_both.status_code == 201
+    full_emp = await mock_employees_collection.find_one({"email": "full@example.com"})
+    assert full_emp is not None
+    assert full_emp["phone"] == "9876543210"
+    assert full_emp["department"] == "Marketing"
+    assert full_emp["role"] == "employee"
+    assert full_emp["status"] == "active"
+
+    # 6. Attempt to override role from client -> rejected with 422
+    mock_redis.store.clear()
+    resp_hack_role = await client.post(
+        "/auth/register",
+        json={
+            "name": "Hacker",
+            "email": "hacker@example.com",
+            "password": "Password123",
+            "role": "admin"
+        }
+    )
+    assert resp_hack_role.status_code == 422
+
+    # 7. Attempt to override status from client -> rejected with 422
+    resp_hack_status = await client.post(
+        "/auth/register",
+        json={
+            "name": "Hacker2",
+            "email": "hacker2@example.com",
+            "password": "Password123",
+            "status": "inactive"
+        }
+    )
+    assert resp_hack_status.status_code == 422
+
+    # 8. Duplicate email registration fails
     resp3 = await client.post(
         "/auth/register",
         json={

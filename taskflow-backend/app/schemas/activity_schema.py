@@ -16,6 +16,8 @@ class ActivityAction(str, Enum):
     COMMENT_UPDATED = "comment_updated"
     COMMENT_DELETED = "comment_deleted"
     USER_ROLE_CHANGED = "user_role_changed"
+    USER_DEACTIVATED = "user_deactivated"
+    USER_REACTIVATED = "user_reactivated"
 
 
 class ActivityEntityType(str, Enum):
@@ -33,6 +35,7 @@ ALLOWED_METADATA_KEYS = {
     "name",
     "assigned_to",
     "content_preview",
+    "status",
 }
 
 

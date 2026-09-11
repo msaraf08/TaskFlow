@@ -71,16 +71,19 @@ Tokens are validated against cryptographic signatures, expiration time, and acti
 ### 2. Authentication & User Profile (`/auth`)
 
 #### `POST /auth/register`
-- **Description:** Public user registration. The first registered user is bootstrapped with the `admin` role; subsequent registrations default to `employee`.
+- **Description:** Public user registration. The first registered user is bootstrapped with the `admin` role (and `"Executive"` department fallback if omitted); subsequent registrations default to `employee` (and `"General"` department fallback if omitted). Optional profile details (`phone`, `department`) can be supplied at registration.
 - **Access:** Public
 - **Request Body (`UserCreateSchema`):**
   ```json
   {
     "name": "John Doe",
     "email": "john@example.com",
-    "password": "SecretPassword123"
+    "password": "SecretPassword123",
+    "phone": "+1234567890",
+    "department": "Engineering"
   }
   ```
+  *(Note: `name`, `email`, and `password` are required. `phone` and `department` are optional. Client-supplied `role` or `status` fields are forbidden and rejected with `422 Unprocessable Entity`.)*
 - **Response `201 Created` (`UserRegisterResponseSchema`):**
   ```json
   {
@@ -224,6 +227,38 @@ Tokens are validated against cryptographic signatures, expiration time, and acti
   - `400 Bad Request`: Malformed ObjectId.
   - `404 Not Found`: Employee does not exist.
 
+#### `PATCH /employees/{employee_id}`
+- **Description:** Admin-only partial update of employee profile fields (`name`, `phone`, `department`). Updates to `name` are automatically synchronized to the corresponding `users` collection record with two-phase rollback. Optional fields (`phone`, `department`) can be updated or cleared with empty strings or null. Disallowed fields (`email`, `user_id`, `role`, `status`, `joining_date`) and unknown fields are forbidden and rejected.
+- **Access:** Admin only (`role: admin`)
+- **Request Body (`EmployeeProfileUpdateSchema`):**
+  ```json
+  {
+    "name": "Jane Smith",
+    "phone": "+1-555-0199",
+    "department": "Engineering"
+  }
+  ```
+  *(Note: All fields are optional in payload; any supplied field is updated. Extra/system-controlled fields are strictly rejected with `422 Unprocessable Entity`.)*
+- **Response `200 OK` (`EmployeeResponseSchema`):**
+  ```json
+  {
+    "id": "6a99d4398a5cbc1907f06f9b",
+    "user_id": "6a99d4398a5cbc1907f06f9c",
+    "name": "Jane Smith",
+    "email": "jane.smith@example.com",
+    "phone": "+1-555-0199",
+    "department": "Engineering",
+    "role": "employee",
+    "joining_date": "2026-09-01",
+    "status": "active"
+  }
+  ```
+- **Errors:**
+  - `400 Bad Request`: Malformed ObjectId.
+  - `403 Forbidden`: Authenticated user is not an Admin.
+  - `404 Not Found`: Target employee does not exist.
+  - `422 Unprocessable Entity`: Validation failure (empty/whitespace name, or forbidden/unknown fields supplied).
+
 #### `PATCH /employees/{employee_id}/role`
 - **Description:** Updates the organizational and authentication role for an employee and synchronizes both `employees` and `users` collections. Rejects self-demotion, last-admin demotion, and demoting active team managers.
 - **Access:** Admin only (`role: admin` caller). Target role may be `employee`, `manager`, or `admin`.
@@ -255,16 +290,54 @@ Tokens are validated against cryptographic signatures, expiration time, and acti
   - `422 Unprocessable Entity`: Invalid role value or extra unexpected fields.
 
 #### `PATCH /employees/{employee_id}/deactivate`
-- **Description:** Deactivates employee and revokes user login access (`status: "inactive"`).
+- **Description:** Deactivates employee profile and synchronizes user account to inactive status (`status: "inactive"`), preventing login and revoking authenticated access without deleting historical tasks, projects, comments, or activities.
 - **Access:** Admin only (`role: admin`)
 - **Response `200 OK`:**
   ```json
   {
-    "message": "Employee deactivated successfully"
+    "message": "Employee deactivated successfully",
+    "employee": {
+      "id": "6a99d4398a5cbc1907f06f9c",
+      "user_id": "6a99d4398a5cbc1907f06f9c",
+      "name": "Jane Smith",
+      "email": "jane.smith@example.com",
+      "phone": "+1-555-0199",
+      "department": "Engineering",
+      "role": "employee",
+      "joining_date": "2026-09-01",
+      "status": "inactive"
+    }
   }
   ```
 - **Errors:**
-  - `400 Bad Request`: Malformed ObjectId.
+  - `400 Bad Request`: Malformed `employee_id` ObjectId.
+  - `403 Forbidden`: Caller is not an admin, or admin caller attempts to deactivate their own account ("Administrators cannot deactivate their own account.").
+  - `404 Not Found`: Employee does not exist.
+  - `409 Conflict`: Target user is the last active administrator ("Cannot deactivate the last active administrator.") or target manager is currently managing active team(s) ("Cannot deactivate {name}. They are currently managing {count} team(s). Reassign those teams first.").
+
+#### `PATCH /employees/{employee_id}/reactivate`
+- **Description:** Reactivates employee profile and synchronizes user account to active status (`status: "active"`), restoring login and system access.
+- **Access:** Admin only (`role: admin`)
+- **Response `200 OK`:**
+  ```json
+  {
+    "message": "Employee reactivated successfully",
+    "employee": {
+      "id": "6a99d4398a5cbc1907f06f9c",
+      "user_id": "6a99d4398a5cbc1907f06f9c",
+      "name": "Jane Smith",
+      "email": "jane.smith@example.com",
+      "phone": "+1-555-0199",
+      "department": "Engineering",
+      "role": "employee",
+      "joining_date": "2026-09-01",
+      "status": "active"
+    }
+  }
+  ```
+- **Errors:**
+  - `400 Bad Request`: Malformed `employee_id` ObjectId.
+  - `403 Forbidden`: Caller is not an admin.
   - `404 Not Found`: Employee does not exist.
 
 ---
@@ -493,10 +566,15 @@ Tokens are validated against cryptographic signatures, expiration time, and acti
   - `422 Unprocessable Entity`: Validation failure (empty title, invalid priority/status enum, or extra forbidden fields).
 
 #### `GET /tasks/`
-- **Description:** Retrieves tasks visible to the authenticated user. Admins see all tasks; Managers see tasks for projects on teams they manage; Employees see tasks assigned to them AND tasks in projects of teams where they are a member.
+- **Description:** Retrieves tasks visible to the authenticated user within role-based access boundaries. Admins see all tasks; Managers see tasks for projects on teams they manage; Employees see tasks assigned to them AND tasks in projects of teams where they are a member.
 - **Query Parameters:**
-  - `project_id` (optional): Filter tasks by project.
-  - `assigned_to` (optional): Filter tasks by assignee.
+  - `project_id` (optional): Filter tasks by project ID.
+  - `assigned_to` (optional): Filter tasks by assigned employee ID.
+  - `status` (optional): Filter by task status (`todo`, `in_progress`, `completed`, `cancelled`).
+  - `priority` (optional): Filter by task priority (`low`, `medium`, `high`, `urgent`).
+  - `search` (optional): Case-insensitive substring search matching task title or description (regex-escaped for safety).
+  - `due_date` (optional): Filter tasks due on a specific date (`YYYY-MM-DD`).
+  - `overdue` (optional): Boolean flag (`true` or `false`) to filter overdue tasks (due before current date and status not completed/cancelled).
 - **Access:** Authenticated (Admin, Manager, Employee)
 - **Response `200 OK`:** Array of `TaskResponseSchema` (sorted by `created_at` descending, returns `[]` if none).
 

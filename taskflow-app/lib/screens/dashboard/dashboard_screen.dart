@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/task.dart';
+import '../../models/user.dart';
 import '../../providers/activity_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/project_provider.dart';
@@ -39,6 +40,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     await Future.wait([
       teamProv.fetchTeams().catchError((_) {}),
+      teamProv.fetchEmployees().catchError((_) {}),
       projProv.fetchProjects().catchError((_) {}),
       taskProv.fetchTasks().catchError((_) {}),
       actProv.fetchActivities(limit: 5).catchError((_) {}),
@@ -69,15 +71,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final tasks = taskProv.tasks;
     final projects = projProv.projects;
     final teams = teamProv.teams;
+    final employees = teamProv.employees;
+
+    // Match current user's employee id
+    final currentEmployee = employees
+        .where((e) =>
+            (authUser != null && e.userId == authUser.id) ||
+            (authUser != null &&
+                e.email.toLowerCase() == authUser.email.toLowerCase()))
+        .firstOrNull;
+    final currentEmpId = currentEmployee?.id;
+
+    final myTasks = currentEmpId != null
+        ? tasks.where((t) => t.assignedTo == currentEmpId).toList()
+        : tasks;
+
+    final now = DateTime.now();
+    final todayStr =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final dueTodayCount = tasks
+        .where((t) => t.hasDueDate && t.dueDate.startsWith(todayStr))
+        .length;
 
     final todoCount = tasks.where((t) => t.status == TaskStatus.todo).length;
-    final inProgressCount = tasks
-        .where((t) => t.status == TaskStatus.inProgress)
-        .length;
-    final completedCount = tasks
-        .where((t) => t.status == TaskStatus.completed)
-        .length;
+    final inProgressCount =
+        tasks.where((t) => t.status == TaskStatus.inProgress).length;
+    final completedCount =
+        tasks.where((t) => t.status == TaskStatus.completed).length;
     final overdueCount = tasks.where((t) => t.isOverdue).length;
+
+    final isStaff = authUser?.role == UserRole.admin ||
+        authUser?.role == UserRole.manager;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Dashboard')),
@@ -93,39 +117,39 @@ class _DashboardScreenState extends State<DashboardScreen> {
               Card(
                 color: theme.colorScheme.primaryContainer,
                 child: Padding(
-                  padding: const EdgeInsets.all(20.0),
+                  padding: const EdgeInsets.all(16.0),
                   child: Row(
                     children: [
                       CircleAvatar(
-                        radius: 28,
+                        radius: 26,
                         backgroundColor: theme.colorScheme.primary,
                         child: Text(
                           (authUser?.name.isNotEmpty ?? false)
                               ? authUser!.name[0].toUpperCase()
                               : 'U',
                           style: TextStyle(
-                            fontSize: 24,
+                            fontSize: 22,
                             fontWeight: FontWeight.bold,
                             color: theme.colorScheme.onPrimary,
                           ),
                         ),
                       ),
-                      const SizedBox(width: 16),
+                      const SizedBox(width: 14),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
                               'Welcome back, ${authUser?.name ?? 'User'}!',
-                              style: theme.textTheme.titleLarge?.copyWith(
+                              style: theme.textTheme.titleMedium?.copyWith(
                                 fontWeight: FontWeight.bold,
                                 color: theme.colorScheme.onPrimaryContainer,
                               ),
                             ),
-                            const SizedBox(height: 4),
+                            const SizedBox(height: 2),
                             Text(
                               'Role: ${authUser?.role.displayName ?? 'Employee'} | ${authUser?.email ?? ''}',
-                              style: theme.textTheme.bodyMedium?.copyWith(
+                              style: theme.textTheme.bodySmall?.copyWith(
                                 color: theme.colorScheme.onPrimaryContainer
                                     .withValues(alpha: 0.8),
                               ),
@@ -137,49 +161,42 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
 
               // Metric Summary Cards
               Text(
-                'Overview',
+                'Key Metrics',
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               LayoutBuilder(
                 builder: (context, constraints) {
-                  final isWide = constraints.maxWidth > 600;
+                  final isWide = constraints.maxWidth > 550;
+                  final crossCount = isWide ? 4 : 2;
                   return GridView.count(
-                    crossAxisCount: isWide ? 4 : 2,
+                    crossAxisCount: crossCount,
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    childAspectRatio: isWide ? 1.4 : 1.3,
+                    crossAxisSpacing: 10,
+                    mainAxisSpacing: 10,
+                    childAspectRatio: isWide ? 1.5 : 1.35,
                     children: [
                       _buildMetricCard(
                         context,
-                        title: 'Teams',
-                        value: '${teams.length}',
-                        icon: Icons.group_outlined,
+                        title: 'My Tasks',
+                        value: '${myTasks.length}',
+                        icon: Icons.assignment_ind_outlined,
                         color: Colors.blue,
-                        onTap: () => widget.onNavigateTab?.call(1),
+                        onTap: () => widget.onNavigateTab?.call(3),
                       ),
                       _buildMetricCard(
                         context,
-                        title: 'Projects',
-                        value: '${projects.length}',
-                        icon: Icons.folder_outlined,
-                        color: Colors.indigo,
-                        onTap: () => widget.onNavigateTab?.call(2),
-                      ),
-                      _buildMetricCard(
-                        context,
-                        title: 'Total Tasks',
-                        value: '${tasks.length}',
-                        icon: Icons.task_alt_outlined,
-                        color: Colors.teal,
+                        title: 'Due Today',
+                        value: '$dueTodayCount',
+                        icon: Icons.today_outlined,
+                        color: Colors.orange,
                         onTap: () => widget.onNavigateTab?.call(3),
                       ),
                       _buildMetricCard(
@@ -190,11 +207,121 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         color: Colors.red,
                         onTap: () => widget.onNavigateTab?.call(3),
                       ),
+                      _buildMetricCard(
+                        context,
+                        title: 'Total Tasks',
+                        value: '${tasks.length}',
+                        icon: Icons.task_alt_outlined,
+                        color: Colors.teal,
+                        onTap: () => widget.onNavigateTab?.call(3),
+                      ),
                     ],
                   );
                 },
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
+
+              // Role Overview (Teams & Projects) for Admin/Manager
+              if (isStaff) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: Card(
+                        child: InkWell(
+                          onTap: () => widget.onNavigateTab?.call(1),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12.0),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 18,
+                                  backgroundColor:
+                                      Colors.blue.withValues(alpha: 0.15),
+                                  child: const Icon(
+                                    Icons.group_outlined,
+                                    color: Colors.blue,
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '${teams.length}',
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Teams',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: theme
+                                            .colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Card(
+                        child: InkWell(
+                          onTap: () => widget.onNavigateTab?.call(2),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12.0),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 18,
+                                  backgroundColor:
+                                      Colors.indigo.withValues(alpha: 0.15),
+                                  child: const Icon(
+                                    Icons.folder_outlined,
+                                    color: Colors.indigo,
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '${projects.length}',
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Projects',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: theme
+                                            .colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+              ],
 
               // Task Status Breakdown
               Card(
@@ -209,7 +336,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 14),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceAround,
                         children: [
@@ -237,7 +364,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
 
               // Recent Tasks
               Row(
@@ -255,11 +382,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               if (tasks.isEmpty)
                 Card(
                   child: Padding(
-                    padding: const EdgeInsets.all(24.0),
+                    padding: const EdgeInsets.all(20.0),
                     child: Center(
                       child: Text(
                         'No tasks assigned or created yet.',
@@ -326,7 +453,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     );
                   },
                 ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
 
               // Recent Activity Stream
               Row(
@@ -344,11 +471,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               if (actProv.activities.isEmpty)
                 Card(
                   child: Padding(
-                    padding: const EdgeInsets.all(24.0),
+                    padding: const EdgeInsets.all(20.0),
                     child: Center(
                       child: Text(
                         'No recent activity recorded.',
@@ -378,7 +505,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       margin: const EdgeInsets.only(bottom: 8),
                       child: ListTile(
                         leading: CircleAvatar(
-                          backgroundColor: theme.colorScheme.secondaryContainer,
+                          backgroundColor:
+                              theme.colorScheme.secondaryContainer,
                           child: Icon(
                             Icons.history,
                             color: theme.colorScheme.onSecondaryContainer,
@@ -408,39 +536,44 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required Color color,
     required VoidCallback onTap,
   }) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Icon(icon, color: color, size: 28),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    value,
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
+    return Semantics(
+      label: '$title: $value',
+      button: true,
+      child: Card(
+        elevation: 1.5,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Icon(icon, color: color, size: 24),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      value,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
                     ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    title,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      fontSize: 12,
+                    const SizedBox(height: 2),
+                    Text(
+                      title,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontSize: 11,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                ],
-              ),
-            ],
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -453,25 +586,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
     int count,
     Color color,
   ) {
-    return Column(
-      children: [
-        Text(
-          '$count',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: color,
+    return Semantics(
+      label: '$label: $count tasks',
+      child: Column(
+        children: [
+          Text(
+            '$count',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
           ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: TextStyle(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-            fontSize: 13,
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 12,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

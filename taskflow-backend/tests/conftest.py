@@ -1,5 +1,6 @@
 from datetime import datetime
 import copy
+import re
 from typing import Any, Dict, List, Optional
 from bson import ObjectId
 import pytest
@@ -74,9 +75,30 @@ class InMemoryAsyncCollection:
             if k == "$or":
                 if not any(self._matches(doc, subquery) for subquery in v):
                     return False
-            elif isinstance(v, dict) and "$in" in v:
-                if doc.get(k) not in v["$in"]:
+            elif k == "$and":
+                if not all(self._matches(doc, subquery) for subquery in v):
                     return False
+            elif isinstance(v, dict):
+                val = doc.get(k)
+                if "$in" in v and val not in v["$in"]:
+                    return False
+                if "$nin" in v and val in v["$nin"]:
+                    return False
+                if "$ne" in v and val == v["$ne"]:
+                    return False
+                if "$lt" in v and (val is None or val >= v["$lt"]):
+                    return False
+                if "$lte" in v and (val is None or val > v["$lte"]):
+                    return False
+                if "$gt" in v and (val is None or val <= v["$gt"]):
+                    return False
+                if "$gte" in v and (val is None or val < v["$gte"]):
+                    return False
+                if "$regex" in v:
+                    pattern = v["$regex"]
+                    flags = re.IGNORECASE if "i" in v.get("$options", "") else 0
+                    if not isinstance(val, str) or not re.search(pattern, val, flags):
+                        return False
             elif k == "_id":
                 if doc.get("_id") != v:
                     return False

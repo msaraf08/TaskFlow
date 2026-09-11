@@ -15,6 +15,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _departmentController = TextEditingController();
   bool _obscurePassword = true;
   String? _errorMessage;
 
@@ -23,6 +25,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _phoneController.dispose();
+    _departmentController.dispose();
     super.dispose();
   }
 
@@ -38,6 +42,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
       name: _nameController.text.trim(),
       email: _emailController.text.trim(),
       password: _passwordController.text,
+      phone: _phoneController.text.trim().isNotEmpty
+          ? _phoneController.text.trim()
+          : null,
+      department: _departmentController.text.trim().isNotEmpty
+          ? _departmentController.text.trim()
+          : null,
     );
 
     if (success && mounted) {
@@ -174,6 +184,28 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             ),
                           ),
                           validator: Validators.validatePassword,
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _phoneController,
+                          keyboardType: TextInputType.phone,
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(
+                            labelText: 'Phone Number (Optional)',
+                            hintText: '+1 555-0199',
+                            prefixIcon: Icon(Icons.phone_outlined),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _departmentController,
+                          textInputAction: TextInputAction.done,
+                          decoration: const InputDecoration(
+                            labelText: 'Department (Optional)',
+                            hintText: 'e.g. Engineering, Marketing',
+                            prefixIcon: Icon(Icons.business_outlined),
+                          ),
+                          onFieldSubmitted: (_) => _handleRegister(),
                         ),
                         const SizedBox(height: 24),
                         FilledButton(

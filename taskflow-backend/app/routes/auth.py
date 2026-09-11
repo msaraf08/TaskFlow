@@ -59,12 +59,18 @@ async def register_user(
 
     # Automatically create corresponding employee record
     if employee_collection is not None:
+        phone_val = user.phone if user.phone is not None else ""
+        if user.department is not None:
+            dept_val = user.department
+        else:
+            dept_val = "Executive" if assigned_role == "admin" else "General"
+
         await employee_collection.insert_one({
             "user_id": user_id,
             "name": user.name,
             "email": user.email,
-            "phone": "",
-            "department": "Executive" if assigned_role == "admin" else "General",
+            "phone": phone_val,
+            "department": dept_val,
             "role": assigned_role,
             "joining_date": datetime.combine(datetime.now(timezone.utc).date(), time.min),
             "status": "active"

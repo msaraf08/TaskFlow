@@ -47,4 +47,13 @@
 - [x] Backend Containerization & Production Configuration (`Dockerfile`, `.dockerignore`, `compose.yaml`)
 - [x] Multi-Service Healthcheck & Startup Ordering
 - [x] Container Networking & External Secret Management
-- [ ] Deployment & Monitoring
+
+## Sprint 10: Practical Enhancements
+- [x] Admin Account Deactivation & Reactivation with Safety Guards
+- [x] Backend Task Search & Multi-Criteria Filtering
+- [x] MongoDB Compound Indexes for Task Queries
+- [x] Dashboard Metric Enhancements & Responsive Layout
+- [x] Flutter Task Filtering, Search Bar & User Management Filters
+- [x] Optional Task Due Date Support Across Backend & Flutter
+- [x] Registration Profile Enhancement (Optional Phone & Department with Role/Status Security)
+- [x] Admin Employee Profile Management (PATCH /employees/{id} & View/Edit Profile Dialog)

@@ -41,6 +41,9 @@ class TaskProvider extends ChangeNotifier {
     String? assignedTo,
     TaskStatus? status,
     TaskPriority? priority,
+    String? search,
+    String? dueDate,
+    bool? overdue,
     int skip = 0,
     int limit = 100,
   }) async {
@@ -64,6 +67,15 @@ class TaskProvider extends ChangeNotifier {
       }
       if (priority != null) {
         queryParams['priority'] = priority.value;
+      }
+      if (search != null && search.trim().isNotEmpty) {
+        queryParams['search'] = search.trim();
+      }
+      if (dueDate != null && dueDate.isNotEmpty) {
+        queryParams['due_date'] = dueDate;
+      }
+      if (overdue != null) {
+        queryParams['overdue'] = overdue.toString();
       }
 
       final data = await _apiClient.get('/tasks', queryParams: queryParams);
@@ -166,6 +178,7 @@ class TaskProvider extends ChangeNotifier {
     TaskPriority? priority,
     TaskStatus? status,
     DateTime? dueDate,
+    bool clearDueDate = false,
     bool isEmployeeRole = false,
   }) async {
     _isLoading = true;
@@ -185,6 +198,8 @@ class TaskProvider extends ChangeNotifier {
       if (status != null) body['status'] = status.value;
       if (dueDate != null) {
         body['due_date'] = dueDate.toIso8601String().split('T')[0];
+      } else if (clearDueDate) {
+        body['due_date'] = null;
       }
 
       final data = await _apiClient.put('/tasks/$id', body: body);
