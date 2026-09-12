@@ -172,5 +172,19 @@ void main() {
 
       expect(() => apiClient.get('/health'), throwsA(isA<ServerException>()));
     });
+
+    test('http.ClientException throws NetworkException', () async {
+      final mockClient = MockClient((request) async {
+        throw http.ClientException('Connection failed');
+      });
+
+      final apiClient = ApiClient(
+        baseUrl: 'http://test.local',
+        client: mockClient,
+        storage: InMemorySecureStorage(),
+      );
+
+      expect(() => apiClient.get('/tasks'), throwsA(isA<NetworkException>()));
+    });
   });
 }

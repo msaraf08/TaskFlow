@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.2.0 - Phase 10: Flutter Web & Final Deployment Preparation
+
+### Added
+- Platform-agnostic network exception handling in Flutter `ApiClient` replacing `dart:io` `SocketException` with `package:http/http.dart`'s `ClientException`, enabling universal compilation across Web, Android, iOS, and desktop.
+- Multi-stage `Dockerfile` in `taskflow-app/` using Flutter SDK builder stage and lightweight `nginx:alpine` runtime stage.
+- Nginx configuration (`nginx.conf`) for Flutter Web single-page application serving with `try_files $uri $uri/ /index.html;`, modern MIME types (including `application/wasm`), static asset caching headers, and un-cached bootstrap entrypoints.
+- `.dockerignore` for `taskflow-app/` excluding local build artifacts, tool caches, and platform native folders.
+- Docker Compose service orchestration in `compose.yaml` adding `frontend` container (`taskflow-frontend`) exposed on port `8080:80` with health check and dependency synchronization on `backend`.
+- Full stack verification: 72 backend pytest tests passing, 56 Flutter unit/widget tests passing, clean `flutter analyze`, and release Flutter Web compilation.
+
 ## v1.1.0 - Phase 9: Practical Enhancements (Deactivation, Task Filtering & Search, Dashboard)
 
 ### Added

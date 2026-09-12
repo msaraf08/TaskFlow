@@ -13,14 +13,14 @@
 ## Deployment & Development Modes
 
 TaskFlow can be run in two primary modes:
-1. **Mode A: Full Docker Compose Stack** (Backend + MongoDB + Redis containerized together)
-2. **Mode B: Hybrid Development** (MongoDB & Redis containerized, FastAPI backend running on host virtual environment for live debugging)
+1. **Mode A: Full Docker Compose Stack** (Frontend Web + Backend FastAPI + MongoDB + Redis containerized together)
+2. **Mode B: Hybrid Development** (MongoDB & Redis containerized, FastAPI backend running on host virtual environment, Flutter app running via `flutter run`)
 
 ---
 
 ## 1. Mode A: Full Docker Compose Stack
 
-Run the complete backend stack (FastAPI, MongoDB, Redis) in containers:
+Run the complete stack (Flutter Web Nginx, FastAPI, MongoDB, Redis) in containers:
 
 ### 1.1 Configure Environment
 
@@ -51,13 +51,19 @@ Verify backend health:
 curl http://localhost:8000/health
 ```
 
-Interactive API documentation (Swagger UI) is available at:
-`http://localhost:8000/docs`
+Verify frontend health:
+```bash
+curl http://localhost:8080/health
+```
+
+Access the applications in your browser:
+- **TaskFlow Web Application**: `http://localhost:8080`
+- **Interactive API Documentation (Swagger UI)**: `http://localhost:8000/docs`
 
 ### 1.4 View Logs & Stop Stack
 
 ```bash
-docker compose logs -f backend
+docker compose logs -f frontend backend
 docker compose down
 ```
 

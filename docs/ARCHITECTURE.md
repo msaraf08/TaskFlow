@@ -126,12 +126,21 @@ taskflow-app/lib/
 
 ## 4. Infrastructure & Container Orchestration
 
-TaskFlow uses Docker Compose to orchestrate its core backend services in a unified network:
+TaskFlow uses Docker Compose to orchestrate its full-stack deployment in a unified network:
 
 ```
 +-------------------------------------------------------------------------+
 | Docker Compose Network (Bridge)                                         |
 |                                                                         |
+|  +-------------------------------------------------------------------+  |
+|  | Service: frontend (Nginx 1.27-alpine / Static Flutter Web SPA)    |  |
+|  | - Port: 8080:80                                                   |  |
+|  | - Serves: Flutter Web release build                               |  |
+|  | - Fallback: try_files $uri $uri/ /index.html                      |  |
+|  | - Healthcheck: GET /health (interval: 10s, timeout: 5s, retries: 5) |  |
+|  +-------------------------------------------------------------------+  |
+|                 | (service_healthy)                                     |
+|                 v                                                       |
 |  +-------------------------------------------------------------------+  |
 |  | Service: backend (FastAPI / Python 3.13-slim)                     |  |
 |  | - Port: 8000:8000                                                 |  |
@@ -153,9 +162,14 @@ TaskFlow uses Docker Compose to orchestrate its core backend services in a unifi
 
 ### 4.1 Inter-Service Networking
 - **Service Discovery**: The containerized FastAPI backend communicates directly with MongoDB (`mongodb://mongodb:27017`) and Redis (`redis://redis:6379/0`) via Docker Compose DNS names.
-- **Port Mapping**: Host port mappings (`8000:8000`, `27017:27017`, `6379:6379`) are exposed for client connectivity and developer tooling.
-- **Dependency Ordering**: `backend` utilizes `depends_on` with `condition: service_healthy` for both `mongodb` and `redis`, ensuring databases are fully responsive before FastAPI initializes.
+- **Port Mapping**:
+  - `frontend`: `8080:80` (Flutter Web application served via Nginx)
+  - `backend`: `8000:8000` (FastAPI REST API)
+  - `mongodb`: `27017:27017` (MongoDB document database)
+  - `redis`: `6379:6379` (Redis cache and rate limiter)
+- **Dependency Ordering**: `frontend` depends on `backend: condition: service_healthy`, which in turn depends on `mongodb: condition: service_healthy` and `redis: condition: service_healthy`.
 
 ### 4.2 Security & Least Privilege
 - **Non-Root Execution**: The backend container creates a dedicated unprivileged user `taskflow` (UID 1000) and executes all application code under this account.
 - **External Secret Management**: Sensitive credentials (`JWT_SECRET`) are injected at runtime via environment variables rather than embedded in image layers.
+- **CORS Restriction**: FastAPI CORS middleware restricts allowed origins to explicit frontend origins (`http://localhost:8080`, `http://127.0.0.1:8080`, etc.) using regex validation.

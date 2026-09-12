@@ -266,3 +266,13 @@
   3. **Team-manager safety:** Query `teams` where `manager_id` matches the employee's ID (`str(employee["_id"])` or `ObjectId`); if any teams are managed, reject demotion with `409 Conflict` (`Cannot demote {name}. They are currently managing {count} team(s). Reassign those teams first.`).
   4. **Two-phase synchronization with rollback:** Update `employees.role` first, then `users.role`. If updating `users` fails, compensate/roll back `employees.role`; if rollback fails, return `500 Internal Server Error`.
   5. **Activity audit trail:** Create exactly one `user_role_changed` activity log per successful role modification.
+
+---
+
+## Decision 045: Flutter Web Containerization, Nginx SPA Serving, and Cross-Platform HTTP Handling
+- **Context:** To provide a single-command deployment experience, the Flutter Web client must be packaged into a lightweight, secure container and served with single-page application fallback routing. Additionally, client networking code must compile seamlessly across Web, Android, iOS, and desktop without unsupported `dart:io` imports.
+- **Decision:**
+  1. **Cross-Platform HTTP Client:** Refactor `ApiClient` to remove `import 'dart:io'` and catch `package:http/http.dart`'s `ClientException`, enabling universal compilation across all Flutter targets while maintaining uniform typed exception mapping.
+  2. **Multi-Stage Docker Build:** Build the Flutter Web application in release mode using a Flutter SDK builder stage, and copy the compiled static assets into an unprivileged `nginx:alpine` runtime container.
+  3. **Nginx SPA Routing & Asset Optimization:** Configure Nginx with `try_files $uri $uri/ /index.html;` for seamless client-side routing, gzip compression, and caching headers for static assets while disabling caching on `index.html` and bootstrap scripts.
+  4. **Full Stack Orchestration:** Add the `frontend` service to `compose.yaml` on port 8080 (mapped to internal port 80), depending on `backend` with healthcheck synchronization.

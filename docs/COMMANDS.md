@@ -4,7 +4,7 @@
 
 ### Full Stack Orchestration
 ```bash
-docker compose up --build -d  # Build and start all services (FastAPI, MongoDB, Redis)
+docker compose up --build -d  # Build and start all services (Frontend, Backend, MongoDB, Redis)
 docker compose up -d          # Start existing services in background
 docker compose down           # Stop and remove containers and networks
 docker compose down -v        # Stop and remove containers, networks, and named volumes
@@ -15,6 +15,7 @@ docker compose config         # Validate and render Compose configuration
 ### Logs & Diagnostics
 ```bash
 docker compose logs -f        # Stream logs for all services
+docker compose logs -f frontend # Stream Flutter Web frontend logs
 docker compose logs -f backend# Stream backend service logs
 docker compose logs -f mongodb# Stream MongoDB logs
 docker compose logs -f redis  # Stream Redis logs
@@ -22,10 +23,12 @@ docker compose logs -f redis  # Stream Redis logs
 
 ### Container Execution & Health
 ```bash
+docker compose exec frontend wget -q --spider http://localhost:80/health # Test frontend health
 docker compose exec backend whoami     # Verify non-root user (taskflow)
 docker compose exec mongodb mongosh --eval "db.adminCommand('ping')" # Test Mongo ping
 docker compose exec redis redis-cli ping # Test Redis ping
 curl http://localhost:8000/health       # Check backend health endpoint
+curl http://localhost:8080/health       # Check frontend health endpoint
 ```
 
 ---

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import '../config/app_config.dart';
@@ -51,7 +50,7 @@ class ApiClient {
           .get(uri, headers: headers)
           .timeout(AppConfig.requestTimeout);
       return _handleResponse(response);
-    } on SocketException {
+    } on http.ClientException {
       throw NetworkException();
     } on TimeoutException {
       throw TimeoutException();
@@ -74,7 +73,7 @@ class ApiClient {
           )
           .timeout(AppConfig.requestTimeout);
       return _handleResponse(response);
-    } on SocketException {
+    } on http.ClientException {
       throw NetworkException();
     } on TimeoutException {
       throw TimeoutException();
@@ -97,7 +96,7 @@ class ApiClient {
           )
           .timeout(AppConfig.requestTimeout);
       return _handleResponse(response);
-    } on SocketException {
+    } on http.ClientException {
       throw NetworkException();
     } on TimeoutException {
       throw TimeoutException();
@@ -120,7 +119,7 @@ class ApiClient {
           )
           .timeout(AppConfig.requestTimeout);
       return _handleResponse(response);
-    } on SocketException {
+    } on http.ClientException {
       throw NetworkException();
     } on TimeoutException {
       throw TimeoutException();
@@ -135,7 +134,7 @@ class ApiClient {
           .delete(uri, headers: headers)
           .timeout(AppConfig.requestTimeout);
       return _handleResponse(response);
-    } on SocketException {
+    } on http.ClientException {
       throw NetworkException();
     } on TimeoutException {
       throw TimeoutException();
